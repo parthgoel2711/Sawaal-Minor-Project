@@ -1,7 +1,7 @@
 {
-  "name": "text-to-sql-frontend",
+  "name": "sawaal-frontend",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,9 @@
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@uiw/react-codemirror": "^4.25.12",
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",

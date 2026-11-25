@@ -54,6 +54,15 @@ export function toCsv(result: QueryResult): string {
   return lines.join("\r\n");
 }
 
+/** A result as a GitHub-style Markdown table (handy for pasting into reports and chats). */
+export function toMarkdown(result: QueryResult, maxRows = 200): string {
+  const esc = (v: Cell, col: string) => formatCell(v, col).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  const head = `| ${result.columns.join(" | ")} |`;
+  const rule = `| ${result.columns.map((_, i) => (result.column_types[i] === "number" ? "---:" : "---")).join(" | ")} |`;
+  const rows = result.rows.slice(0, maxRows).map((r) => `| ${r.map((v, i) => esc(v, result.columns[i])).join(" | ")} |`);
+  return [head, rule, ...rows].join("\n");
+}
+
 export function downloadText(filename: string, text: string, type = "text/csv;charset=utf-8") {
   const blob = new Blob(["﻿" + text], { type });
   const url = URL.createObjectURL(blob);

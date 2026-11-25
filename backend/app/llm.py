@@ -131,10 +131,28 @@ class SQLGenerator(Protocol):
         question: str,
         history: list[HistoryTurn],
         failures: list[Failure],
+        context: str = "",
     ) -> Generation: ...
 
     def route(self, *, question: str, catalog: str) -> str | None:
         """Return the id of the database (from `catalog`) that can answer `question`, or None."""
+        ...
+
+    def insight(self, *, question: str, sql: str, columns: list[str], rows: list[list[Any]],
+                row_count: int) -> Insight:
+        """Explain a query result in plain language and suggest follow-up questions."""
+        ...
+
+    def explain(self, *, dialect: str, schema: str, sql: str) -> Explanation:
+        """Explain what a SQL query does, step by step."""
+        ...
+
+    def dashboard(self, *, dialect: str, schema: str, count: int) -> list[ChartIdea]:
+        """Propose starter charts for a database."""
+        ...
+
+    def answer_documents(self, *, question: str, passages: list[str], data_context: str | None) -> DocAnswer:
+        """Answer from document passages, citing them by number."""
         ...
 
 
@@ -198,8 +216,11 @@ def build_system_prompt(dialect: str, schema: str) -> str:
     return SYSTEM_TEMPLATE.format(dialect=label, schema=schema, tips=DIALECT_TIPS.get(dialect, ""))
 
 
-def build_user_message(question: str, history: list[HistoryTurn], today: date | None = None) -> str:
+def build_user_message(question: str, history: list[HistoryTurn], today: date | None = None, context: str = "") -> str:
     parts = []
+    if context:
+        parts.append(context)
+        parts.append("")
     if history:
         parts.append("Earlier in this conversation (the new question may refer to these):")
         for i, turn in enumerate(history, start=1):
@@ -218,6 +239,181 @@ def repair_message(error: str) -> str:
         f"{error}\n\n"
         "Write a corrected query that answers the same question."
     )
+
+
+INSIGHT_SYSTEM = """\
+You are a data analyst explaining a query result to a non-technical reader. You get the user's question, the SQL \
+that was run, and the result rows (possibly only the first rows of a longer result).
+Write:
+- "summary": one to three sentences that directly answer the question using the real numbers in the result \
+(name the top item, the total, the trend). Never invent numbers that are not in the result. If the result is only a \
+sample of more rows, say so. Write in the same language as the question.
+- "followups": exactly three short, natural follow-up questions the user could ask next about the same data, \
+each answerable with one SQL query. Do not repeat the original question.
+Reply with only a JSON object: {"summary": "...", "followups": ["...", "...", "..."]}"""
+
+INSIGHT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "description": "Plain-language answer based on the result."},
+        "followups": {"type": "array", "items": {"type": "string"}, "description": "Three follow-up questions."},
+    },
+    "required": ["summary", "followups"],
+    "additionalProperties": False,
+}
+
+INSIGHT_MAX_ROWS = 25
+INSIGHT_MAX_CELL = 60
+
+
+@dataclass
+class Insight:
+    summary: str = ""
+    followups: list[str] = field(default_factory=list)
+
+
+def insight_message(question: str, sql: str, columns: list[str], rows: list[list[Any]], row_count: int) -> str:
+    """A compact text version of a query result for the insight prompt."""
+
+    def cell(v: Any) -> str:
+        text = "NULL" if v is None else str(v).replace("\n", " ")
+        return text if len(text) <= INSIGHT_MAX_CELL else text[: INSIGHT_MAX_CELL - 1] + "…"
+
+    shown = rows[:INSIGHT_MAX_ROWS]
+    lines = [" | ".join(columns)] + [" | ".join(cell(v) for v in row) for row in shown]
+    note = f"Showing the first {len(shown)} of {row_count} rows." if row_count > len(shown) else f"{row_count} row(s)."
+    return f"Question: {question}\n\nSQL:\n{sql}\n\nResult ({note}):\n" + "\n".join(lines)
+
+
+def to_insight(data: dict[str, Any]) -> Insight:
+    raw = data.get("followups")
+    followups = [str(q).strip() for q in raw if str(q).strip()] if isinstance(raw, list) else []
+    return Insight(summary=str(data.get("summary") or "").strip(), followups=followups[:3])
+
+
+EXPLAIN_SYSTEM = """\
+You explain SQL to someone who is learning it. You get a {dialect} query and the database schema it runs on.
+Write:
+- "summary": one or two plain sentences saying what question the query answers.
+- "steps": between two and six short steps in the order the database does the work (which tables are read, how \
+they are joined, what is filtered, grouped, sorted or limited). Use plain words and name the real tables and columns.
+Reply with only a JSON object: {{"summary": "...", "steps": ["...", "..."]}}
+
+<schema>
+{schema}
+</schema>"""
+
+EXPLAIN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "steps": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["summary", "steps"],
+    "additionalProperties": False,
+}
+
+
+@dataclass
+class Explanation:
+    summary: str = ""
+    steps: list[str] = field(default_factory=list)
+
+
+def to_explanation(data: dict[str, Any]) -> Explanation:
+    raw = data.get("steps")
+    steps = [str(x).strip() for x in raw if str(x).strip()] if isinstance(raw, list) else []
+    return Explanation(summary=str(data.get("summary") or "").strip(), steps=steps[:8])
+
+
+def explain_system(dialect: str, schema: str) -> str:
+    return EXPLAIN_SYSTEM.format(dialect=DIALECT_LABELS.get(dialect, dialect), schema=schema)
+
+
+DASHBOARD_SYSTEM = """\
+You design a starter dashboard for a database. You get the {dialect} schema. Propose {count} charts that together \
+give a good first picture of the data: totals, a trend over time if there is a date column, the biggest categories, \
+and one comparison. For each chart write:
+- "title": a short plain title (no trailing period).
+- "sql": one read-only {dialect} SELECT that returns a category or time column first and one or two numeric columns, \
+with at most 20 rows, and column aliases that read like labels.
+- "note": one short sentence on what the chart shows.
+Use only tables and columns from the schema. Reply with only a JSON object: \
+{{"charts": [{{"title": "...", "sql": "...", "note": "..."}}]}}
+
+<schema>
+{schema}
+</schema>"""
+
+DASHBOARD_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "charts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"title": {"type": "string"}, "sql": {"type": "string"}, "note": {"type": "string"}},
+                "required": ["title", "sql", "note"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["charts"],
+    "additionalProperties": False,
+}
+
+
+@dataclass
+class ChartIdea:
+    title: str
+    sql: str
+    note: str = ""
+
+
+def to_chart_ideas(data: dict[str, Any]) -> list[ChartIdea]:
+    raw = data.get("charts")
+    out: list[ChartIdea] = []
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, dict) and str(item.get("sql") or "").strip() and str(item.get("title") or "").strip():
+            out.append(ChartIdea(str(item["title"]).strip(), str(item["sql"]).strip(), str(item.get("note") or "").strip()))
+    return out
+
+
+def dashboard_system(dialect: str, schema: str, count: int) -> str:
+    return DASHBOARD_SYSTEM.format(dialect=DIALECT_LABELS.get(dialect, dialect), schema=schema, count=count)
+
+
+DOCS_SYSTEM = """\
+You answer questions using only the numbered passages you are given, which come from the user's documents \
+(and sometimes a database result). Rules:
+- Answer in a few plain sentences. Do not use knowledge from outside the passages.
+- After each claim, cite the passage numbers it came from like [1] or [2][3].
+- If the passages do not contain the answer, set "found" to false and say briefly what is missing.
+Reply with only a JSON object: {"answer": "...", "found": true}"""
+
+DOCS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}, "found": {"type": "boolean"}},
+    "required": ["answer", "found"],
+    "additionalProperties": False,
+}
+
+
+@dataclass
+class DocAnswer:
+    answer: str
+    found: bool = True
+
+
+def docs_message(question: str, passages: list[str], data_context: str | None) -> str:
+    parts = [f"[{i}] {text}" for i, text in enumerate(passages, start=1)]
+    if data_context:
+        parts.append(f"[{len(passages) + 1}] Database result: {data_context}")
+    return "Passages:\n\n" + "\n\n".join(parts) + f"\n\nQuestion: {question}"
+
+
+def to_doc_answer(data: dict[str, Any]) -> DocAnswer:
+    return DocAnswer(answer=str(data.get("answer") or "").strip(), found=bool(data.get("found", True)))
 
 
 class ClaudeSQLGenerator:
@@ -242,9 +438,10 @@ class ClaudeSQLGenerator:
         question: str,
         history: list[HistoryTurn],
         failures: list[Failure],
+        context: str = "",
     ) -> Generation:
         messages: list[dict[str, Any]] = [
-            {"role": "user", "content": build_user_message(question, history)}
+            {"role": "user", "content": build_user_message(question, history, context=context)}
         ]
         for failure in failures:
             messages.append({"role": "assistant", "content": failure.generation.raw_content})
@@ -263,6 +460,38 @@ class ClaudeSQLGenerator:
             effort="low", schema=ROUTE_SCHEMA, max_tokens=4000,
         )
         return str(parse_answer(text).get("database_id") or "").strip() or None
+
+    def insight(self, *, question: str, sql: str, columns: list[str], rows: list[list[Any]],
+                row_count: int) -> Insight:
+        text, _ = self._create(
+            system=INSIGHT_SYSTEM,
+            messages=[{"role": "user", "content": insight_message(question, sql, columns, rows, row_count)}],
+            effort="low", schema=INSIGHT_SCHEMA, max_tokens=4000,
+        )
+        return to_insight(parse_answer(text))
+
+    def explain(self, *, dialect: str, schema: str, sql: str) -> Explanation:
+        text, _ = self._create(
+            system=[{"type": "text", "text": explain_system(dialect, schema), "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": f"Explain this query:\n\n{sql}"}],
+            effort="low", schema=EXPLAIN_SCHEMA, max_tokens=4000,
+        )
+        return to_explanation(parse_answer(text))
+
+    def dashboard(self, *, dialect: str, schema: str, count: int) -> list[ChartIdea]:
+        text, _ = self._create(
+            system=[{"type": "text", "text": dashboard_system(dialect, schema, count), "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": "Propose the charts."}],
+            effort="low", schema=DASHBOARD_SCHEMA, max_tokens=8000,
+        )
+        return to_chart_ideas(parse_answer(text))
+
+    def answer_documents(self, *, question: str, passages: list[str], data_context: str | None) -> DocAnswer:
+        text, _ = self._create(
+            system=DOCS_SYSTEM, messages=[{"role": "user", "content": docs_message(question, passages, data_context)}],
+            effort="low", schema=DOCS_SCHEMA, max_tokens=4000,
+        )
+        return to_doc_answer(parse_answer(text))
 
     def _create(self, *, system: Any, messages: list[dict[str, Any]], effort: str, schema: dict[str, Any],
                 max_tokens: int) -> tuple[str, Any]:
@@ -351,10 +580,11 @@ class GroqSQLGenerator:
         question: str,
         history: list[HistoryTurn],
         failures: list[Failure],
+        context: str = "",
     ) -> Generation:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": build_system_prompt(dialect, schema) + JSON_INSTRUCTION},
-            {"role": "user", "content": build_user_message(question, history)},
+            {"role": "user", "content": build_user_message(question, history, context=context)},
         ]
         for failure in failures:
             messages.append({"role": "assistant", "content": failure.generation.raw_content})
@@ -370,6 +600,39 @@ class GroqSQLGenerator:
         ]
         data, _ = self._complete_json(messages, max_tokens=2048)
         return str(data.get("database_id") or "").strip() or None
+
+    def insight(self, *, question: str, sql: str, columns: list[str], rows: list[list[Any]],
+                row_count: int) -> Insight:
+        messages = [
+            {"role": "system", "content": INSIGHT_SYSTEM},
+            {"role": "user", "content": insight_message(question, sql, columns, rows, row_count)},
+        ]
+        data, _ = self._complete_json(messages, max_tokens=2048)
+        return to_insight(data)
+
+    def explain(self, *, dialect: str, schema: str, sql: str) -> Explanation:
+        messages = [
+            {"role": "system", "content": explain_system(dialect, schema)},
+            {"role": "user", "content": f"Explain this query:\n\n{sql}"},
+        ]
+        data, _ = self._complete_json(messages, max_tokens=2048)
+        return to_explanation(data)
+
+    def dashboard(self, *, dialect: str, schema: str, count: int) -> list[ChartIdea]:
+        messages = [
+            {"role": "system", "content": dashboard_system(dialect, schema, count)},
+            {"role": "user", "content": "Propose the charts."},
+        ]
+        data, _ = self._complete_json(messages, max_tokens=4096)
+        return to_chart_ideas(data)
+
+    def answer_documents(self, *, question: str, passages: list[str], data_context: str | None) -> DocAnswer:
+        messages = [
+            {"role": "system", "content": DOCS_SYSTEM},
+            {"role": "user", "content": docs_message(question, passages, data_context)},
+        ]
+        data, _ = self._complete_json(messages, max_tokens=2048)
+        return to_doc_answer(data)
 
     def _models(self) -> list[str]:
         models = [self.settings.groq_model]
@@ -448,6 +711,10 @@ class GroqSQLGenerator:
 
 def make_generator(settings: Settings) -> SQLGenerator:
     """Build the generator for the configured provider."""
+    if settings.provider == "demo":
+        from .demo import DemoGenerator
+
+        return DemoGenerator()
     if settings.provider == "groq":
         return GroqSQLGenerator(settings)
     return ClaudeSQLGenerator(settings)

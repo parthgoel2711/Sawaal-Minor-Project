@@ -151,3 +151,13 @@ def validate_read_only(sql: str, dialect: str | None = None) -> str:
             raise UnsafeSQLError(f"The function {_function_name(node)}() is not allowed.")
 
     return cleaned
+
+
+def referenced_tables(sql: str, dialect: str | None = None) -> set[str]:
+    """Lower-case names of the real tables a query reads (common table expressions are not tables)."""
+    try:
+        root = sqlglot.parse_one(sql, read=dialect)
+    except (ParseError, TokenError):
+        return set()
+    ctes = {c.alias_or_name.lower() for c in root.find_all(exp.CTE)}
+    return {t.name.lower() for t in root.find_all(exp.Table) if t.name and t.name.lower() not in ctes}

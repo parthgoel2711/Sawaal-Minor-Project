@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.database import DatabaseRegistry
-from app.llm import Failure, Generation
+from app.llm import ChartIdea, DocAnswer, Explanation, Failure, Generation, Insight
 from app.main import create_app
 from app.schemas import HistoryTurn
 from app.seed import ensure_sample_databases
@@ -54,15 +54,40 @@ class FakeGenerator:
         self.calls: list[dict] = []
         self.route_to: str | None = None
         self.route_calls: list[dict] = []
+        self.insight_calls: list[dict] = []
+        self.insight_result: Insight | Exception = Insight(
+            summary="There are 300 customers.", followups=["How many per city?", "Top spenders?", "Newest customers?"]
+        )
+
+    def dashboard(self, *, dialect, schema, count):
+        self.dashboard_ideas = getattr(self, "dashboard_ideas", None) or [
+            ChartIdea("Customers by city", "SELECT city, COUNT(*) AS n FROM customers GROUP BY city ORDER BY n DESC", "Where customers live."),
+            ChartIdea("Orders by status", "SELECT status, COUNT(*) AS n FROM orders GROUP BY status", "Order outcomes."),
+        ]
+        return self.dashboard_ideas
+
+    def answer_documents(self, *, question, passages, data_context) -> DocAnswer:
+        self.doc_calls = getattr(self, "doc_calls", []) + [dict(question=question, passages=passages, data_context=data_context)]
+        return DocAnswer(answer="The notice period is 30 days [1].", found=True)
+
+    def explain(self, *, dialect, schema, sql) -> Explanation:
+        self.explain_calls = getattr(self, "explain_calls", []) + [dict(dialect=dialect, schema=schema, sql=sql)]
+        return Explanation(summary="Counts customers.", steps=["Read the customers table.", "Count the rows."])
+
+    def insight(self, *, question, sql, columns, rows, row_count) -> Insight:
+        self.insight_calls.append(dict(question=question, sql=sql, columns=columns, rows=rows, row_count=row_count))
+        if isinstance(self.insight_result, Exception):
+            raise self.insight_result
+        return self.insight_result
 
     def route(self, *, question: str, catalog: str) -> str | None:
         self.route_calls.append(dict(question=question, catalog=catalog))
         return self.route_to
 
     def generate(self, *, dialect: str, schema: str, question: str,
-                 history: list[HistoryTurn], failures: list[Failure]) -> Generation:
+                 history: list[HistoryTurn], failures: list[Failure], context: str = "") -> Generation:
         self.calls.append(dict(dialect=dialect, schema=schema, question=question,
-                               history=history, failures=list(failures)))
+                               history=history, failures=list(failures), context=context))
         if callable(self.script):
             return self.script(question=question, failures=failures, schema=schema)
         if self.script:

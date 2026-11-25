@@ -8,7 +8,7 @@ python-dotenv==1.2.4
 python-multipart==0.0.33
 SQLAlchemy==2.1.8
 sqlglot==30.31.0
-
-# Optional drivers for connecting external databases (see README):
-# psycopg[binary]   # PostgreSQL  -> postgresql+psycopg://user:pass@host/db
-# PyMySQL           # MySQL       -> mysql+pymysql://user:pass@host/db
+pypdf==7.1.1
+cryptography==50.0.2
+psycopg[binary]==3.3.9
+PyMySQL==1.2.4

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Code2, Loader2, SendHorizontal, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Code2, Loader2, Mic, MicOff, SendHorizontal, Sparkles } from "lucide-react";
 import type { Schema, Theme } from "../types";
 import { SqlEditor } from "./SqlEditor";
 
@@ -21,16 +21,91 @@ interface Props {
   resetKey: number;
 }
 
+/** Minimal typing for the browser's speech recognition (Chrome, Edge and Safari). */
+interface Recognizer {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+type RecognizerCtor = new () => Recognizer;
+
+function speechCtor(): RecognizerCtor | null {
+  const w = window as unknown as { SpeechRecognition?: RecognizerCtor; webkitSpeechRecognition?: RecognizerCtor };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+const VOICE_LANGS = [
+  { code: "en-IN", label: "EN" },
+  { code: "hi-IN", label: "हिं" },
+];
+
 export function Composer(props: Props) {
   const { mode, onModeChange, question, onQuestionChange, sql, onSqlChange, onSubmit, busy, llmEnabled, followUp } = props;
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const recRef = useRef<Recognizer | null>(null);
+  const baseRef = useRef("");
+  const [listening, setListening] = useState(false);
+  const [langIdx, setLangIdx] = useState(0);
+  const voiceSupported = speechCtor() !== null;
 
-  // Grow the textarea with its content.
+  const stopVoice = () => {
+    recRef.current?.stop();
+    recRef.current = null;
+    setListening(false);
+  };
+
+  const toggleVoice = () => {
+    if (listening) return stopVoice();
+    const Ctor = speechCtor();
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.lang = VOICE_LANGS[langIdx].code;
+    rec.interimResults = true;
+    rec.continuous = false;
+    baseRef.current = question.trim() ? question.trim() + " " : "";
+    rec.onresult = (e) => {
+      const text = Array.from(e.results, (r) => r[0].transcript).join("");
+      onQuestionChange(baseRef.current + text);
+    };
+    rec.onerror = () => stopVoice();
+    rec.onend = () => {
+      recRef.current = null;
+      setListening(false);
+    };
+    recRef.current = rec;
+    setListening(true);
+    rec.start();
+  };
+
+  // Stop listening when the user leaves the question box or sends it.
+  useEffect(() => {
+    if (busy || mode !== "ai") stopVoice();
+  }, [busy, mode]);
+  useEffect(() => () => recRef.current?.stop(), []);
+
+  // Grow the textarea with its content, and re-fit when the window (and so the line width) changes.
   useEffect(() => {
     const el = textRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    };
+    fit();
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth !== width) {
+        width = el.clientWidth;
+        fit();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [question, mode]);
 
   const canSubmit = !busy && (mode === "ai" ? question.trim().length > 0 && llmEnabled : sql.trim().length > 0);
@@ -96,6 +171,27 @@ export function Composer(props: Props) {
               placeholder="SELECT * FROM … (Ctrl+Enter to run)"
               autoFocus
             />
+          </div>
+        )}
+        {mode === "ai" && voiceSupported && llmEnabled && (
+          <div className="voice">
+            <button
+              className="lang-btn"
+              onClick={() => setLangIdx((i) => (i + 1) % VOICE_LANGS.length)}
+              disabled={listening}
+              title="Speaking language (click to switch between English and Hindi)"
+              aria-label="Speaking language"
+            >
+              {VOICE_LANGS[langIdx].label}
+            </button>
+            <button
+              className={"mic-btn" + (listening ? " listening" : "")}
+              onClick={toggleVoice}
+              aria-label={listening ? "Stop listening" : "Ask by voice"}
+              title={listening ? "Stop listening" : "Ask by voice"}
+            >
+              {listening ? <MicOff size={17} /> : <Mic size={17} />}
+            </button>
           </div>
         )}
         <button className="send-btn" onClick={onSubmit} disabled={!canSubmit} aria-label={mode === "ai" ? "Ask" : "Run"}>

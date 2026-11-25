@@ -6,10 +6,10 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from .schemas import HistoryItem
+from .schemas import DayCount, HistoryItem, StatsOut
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS history (
@@ -37,6 +37,10 @@ class HistoryStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            existing = {r["name"] for r in conn.execute("PRAGMA table_info(history)")}
+            for column, ddl in (("repairs", "INTEGER NOT NULL DEFAULT 0"), ("elapsed_ms", "REAL")):
+                if column not in existing:  # databases created by an older version
+                    conn.execute(f"ALTER TABLE history ADD COLUMN {column} {ddl}")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -73,13 +77,15 @@ class HistoryStore:
         explanation: str | None = None,
         row_count: int | None = None,
         error: str | None = None,
+        repairs: int = 0,
+        elapsed_ms: float | None = None,
     ) -> int:
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._lock, self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO history (database_id, question, sql, explanation, row_count, error, source, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (database_id, question, sql, explanation, row_count, error, source, now),
+                "INSERT INTO history (database_id, question, sql, explanation, row_count, error, source, created_at, "
+                "repairs, elapsed_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (database_id, question, sql, explanation, row_count, error, source, now, repairs, elapsed_ms),
             )
             conn.execute(
                 "DELETE FROM history WHERE starred = 0 AND id NOT IN "
@@ -126,3 +132,31 @@ class HistoryStore:
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self._lock, self._connect() as conn:
             return conn.execute(f"DELETE FROM history {where}", args).rowcount
+
+    def stats(self, database_id: str | None = None, days: int = 14) -> StatsOut:
+        where, args = ("WHERE database_id = ?", [database_id]) if database_id else ("", [])
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS total, "
+                f"COALESCE(SUM(source = 'ai'), 0) AS ai, COALESCE(SUM(source = 'manual'), 0) AS manual, "
+                f"COALESCE(SUM(error IS NOT NULL), 0) AS failed, "
+                f"COALESCE(SUM(source = 'ai' AND repairs > 0), 0) AS repaired, "
+                f"AVG(CASE WHEN source = 'ai' THEN elapsed_ms END) AS avg_ms "
+                f"FROM history {where}", args).fetchone()
+            by_day = {
+                r["day"]: r["n"]
+                for r in conn.execute(
+                    f"SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM history {where} GROUP BY day", args)
+            }
+        today = datetime.now(UTC).date()
+        daily = [
+            DayCount(day=(d := (today - timedelta(days=i)).isoformat()), count=by_day.get(d, 0))
+            for i in range(days - 1, -1, -1)
+        ]
+        total = row["total"]
+        return StatsOut(
+            total=total, ai=row["ai"], manual=row["manual"], failed=row["failed"], repaired=row["repaired"],
+            avg_seconds=round(row["avg_ms"] / 1000, 1) if row["avg_ms"] else None,
+            success_rate=round(1 - row["failed"] / total, 3) if total else None,
+            daily=daily,
+        )

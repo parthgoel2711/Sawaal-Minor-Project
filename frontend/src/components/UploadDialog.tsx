@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { FileUp, Loader2, X } from "lucide-react";
+import { FileUp, Loader2, Plug, X } from "lucide-react";
 import { api, errorMessage } from "../api";
 import type { DatabaseInfo } from "../types";
 
 interface Props {
   open: boolean;
   uploadedDatabases: DatabaseInfo[];
+  canConnect: boolean;
   onClose: () => void;
   onUploaded: (db: DatabaseInfo) => void;
 }
 
 const ACCEPT = ".csv,.tsv,.txt,.db,.sqlite,.sqlite3";
 
-export function UploadDialog({ open, uploadedDatabases, onClose, onUploaded }: Props) {
+export function UploadDialog({ open, canConnect, uploadedDatabases, onClose, onUploaded }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -20,6 +21,9 @@ export function UploadDialog({ open, uploadedDatabases, onClose, onUploaded }: P
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [tab, setTab] = useState<"file" | "connect">("file");
+  const [connName, setConnName] = useState("");
+  const [connUrl, setConnUrl] = useState("");
 
   useEffect(() => {
     const d = dialogRef.current;
@@ -28,6 +32,8 @@ export function UploadDialog({ open, uploadedDatabases, onClose, onUploaded }: P
       setFile(null);
       setTarget("");
       setError(null);
+      setConnName("");
+      setConnUrl("");
       d.showModal();
     } else if (!open && d.open) {
       d.close();
@@ -37,11 +43,14 @@ export function UploadDialog({ open, uploadedDatabases, onClose, onUploaded }: P
   const isCsv = !!file && /\.(csv|tsv|txt)$/i.test(file.name);
 
   const submit = async () => {
-    if (!file) return;
+    if (tab === "file" && !file) return;
     setBusy(true);
     setError(null);
     try {
-      const db = await api.upload(file, isCsv && target ? target : undefined);
+      const db =
+        tab === "connect"
+          ? await api.connect(connName.trim(), connUrl.trim())
+          : await api.upload(file!, isCsv && target ? target : undefined);
       onUploaded(db);
     } catch (e) {
       setError(errorMessage(e));
@@ -58,6 +67,45 @@ export function UploadDialog({ open, uploadedDatabases, onClose, onUploaded }: P
           <X size={16} />
         </button>
       </div>
+      {canConnect && (<div className="segmented" role="tablist" aria-label="Source">
+        <button role="tab" aria-selected={tab === "file"} className={tab === "file" ? "active" : ""} onClick={() => setTab("file")}>
+          <FileUp size={14} /> Upload a file
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "connect"}
+          className={tab === "connect" ? "active" : ""}
+          onClick={() => setTab("connect")}
+        >
+          <Plug size={14} /> Connect a database
+        </button>
+      </div>)}
+
+      {tab === "connect" && (
+        <div className="connect-form">
+          <p className="muted">
+            Connect a live PostgreSQL or MySQL database. Queries run read-only, and the connection string is stored encrypted
+            on this server. Use a database user that can only read.
+          </p>
+          <label className="field">
+            <span>Name</span>
+            <input value={connName} onChange={(e) => setConnName(e.target.value)} placeholder="Sales warehouse" maxLength={60} />
+          </label>
+          <label className="field">
+            <span>Connection URL</span>
+            <input
+              value={connUrl}
+              onChange={(e) => setConnUrl(e.target.value)}
+              placeholder="postgresql://user:password@host:5432/dbname"
+              spellCheck={false}
+              autoComplete="off"
+              className="mono"
+            />
+          </label>
+        </div>
+      )}
+
+      {tab === "file" && (<>
       <p className="muted">
         Upload a <strong>CSV</strong> file (becomes a table) or a <strong>SQLite</strong> database (.db, .sqlite). Files stay on
         this server.
@@ -114,6 +162,7 @@ export function UploadDialog({ open, uploadedDatabases, onClose, onUploaded }: P
           </select>
         </label>
       )}
+      </>)}
 
       {error && <p className="error-text">{error}</p>}
 
@@ -121,8 +170,13 @@ export function UploadDialog({ open, uploadedDatabases, onClose, onUploaded }: P
         <button className="ghost-btn" onClick={onClose} disabled={busy}>
           Cancel
         </button>
-        <button className="primary-btn" onClick={submit} disabled={!file || busy}>
-          {busy ? <Loader2 size={14} className="spin" /> : <FileUp size={14} />} Upload
+        <button
+          className="primary-btn"
+          onClick={submit}
+          disabled={busy || (tab === "file" ? !file : !connName.trim() || !connUrl.trim())}
+        >
+          {busy ? <Loader2 size={14} className="spin" /> : tab === "file" ? <FileUp size={14} /> : <Plug size={14} />}{" "}
+          {tab === "file" ? "Upload" : "Connect"}
         </button>
       </div>
     </dialog>

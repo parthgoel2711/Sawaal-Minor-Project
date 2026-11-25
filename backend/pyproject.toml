@@ -1,7 +1,7 @@
 [project]
-name = "text-to-sql-backend"
-version = "1.0.0"
-description = "FastAPI backend for the Text-to-SQL app"
+name = "sawaal-backend"
+version = "2.0.0"
+description = "FastAPI backend for the Sawaal app"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
@@ -24,3 +24,4 @@ ignore = [
 # Prompt text and seed data read better as long lines.
 "app/llm.py" = ["E501"]
 "app/seed.py" = ["E501"]
+"tests/*" = ["E501"]

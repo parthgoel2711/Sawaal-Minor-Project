@@ -1,25 +1,46 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
+  BookOpen,
+  GraduationCap,
+  LogOut,
+  ShieldCheck,
   Database,
+  Home as HomeIcon,
+  FileText,
   History as HistoryIcon,
-  Menu,
+  LayoutDashboard,
+  MessageSquare,
   MessageSquarePlus,
   Moon,
+  Network,
+  PanelLeft,
   RefreshCw,
+  Search,
   Sun,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import { api, errorMessage } from "./api";
+import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
+import { Dashboard } from "./components/Dashboard";
+import { ExploreView } from "./components/ExploreView";
+import { DocumentsView } from "./components/DocumentsView";
+import { AdminView } from "./components/AdminView";
+import { Home } from "./components/Home";
+import { Login } from "./components/Login";
+import { TrainingView } from "./components/TrainingView";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { SchemaPanel } from "./components/SchemaPanel";
 import { TurnCard } from "./components/TurnCard";
 import { UploadDialog } from "./components/UploadDialog";
-import { newId } from "./lib/format";
+import { UsageView } from "./components/UsageView";
+import { downloadText, newId } from "./lib/format";
+import { buildReport } from "./lib/report";
 import { load, save } from "./lib/storage";
-import type { DatabaseInfo, Health, HistoryItem, HistoryTurn, Schema, Theme, Turn } from "./types";
+import type { DatabaseInfo, Health, Me, HistoryItem, HistoryTurn, Schema, Theme, Turn, View } from "./types";
 
 const MAX_CONTEXT_TURNS = 4;
 
@@ -32,6 +53,7 @@ function initialTheme(): Theme {
 export default function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [health, setHealth] = useState<Health | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
   const [dbId, setDbId] = useState<string | null>(() => load("database"));
@@ -45,6 +67,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mode, setMode] = useState<"ai" | "sql">("ai");
+  const [view, setView] = useState<View>("home");
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [sqlDraft, setSqlDraft] = useState("");
   const [composerKey, setComposerKey] = useState(0);
@@ -55,13 +79,29 @@ export default function App() {
   const turns = useMemo(() => (dbId ? turnsByDb[dbId] ?? [] : []), [turnsByDb, dbId]);
   const busy = turns.some((t) => t.status === "thinking");
   const llmEnabled = !!health?.llm_enabled;
-  const aiName = health?.provider === "groq" ? "Groq" : health?.provider === "anthropic" ? "Claude" : "AI";
+  const role = me?.user?.role ?? "viewer";
+  const canTeach = role !== "viewer";
+  const isAdmin = role === "admin";
+  const needsLogin = !!me && me.auth_enabled && !me.user;
+  const aiName = health?.provider === "groq" ? "Groq" : health?.provider === "anthropic" ? "Claude" : health?.provider === "demo" ? "Demo AI" : "AI";
 
   // ---------- theme ----------
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     save("theme", theme);
   }, [theme]);
+
+  // ---------- Ctrl/Cmd+K ----------
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // ---------- toast ----------
   const notify = useCallback((text: string, kind: "ok" | "error" = "ok") => {
@@ -72,8 +112,11 @@ export default function App() {
   // ---------- initial load ----------
   const loadDatabases = useCallback(async () => {
     try {
-      const [h, dbs] = await Promise.all([api.health(), api.databases()]);
+      const [h, who] = await Promise.all([api.health(), api.me()]);
       setHealth(h);
+      setMe(who);
+      if (who.auth_enabled && !who.user) return [];
+      const dbs = await api.databases();
       setDatabases(dbs);
       setConnectError(null);
       if (!h.llm_enabled) setMode("sql");
@@ -87,6 +130,24 @@ export default function App() {
   useEffect(() => {
     loadDatabases();
   }, [loadDatabases]);
+
+  // A request came back 401: the session ended, so go back to the sign-in page.
+  useEffect(() => {
+    const onUnauthorized = () => setMe((m) => (m ? { ...m, user: null } : m));
+    window.addEventListener("sawaal:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("sawaal:unauthorized", onUnauthorized);
+  }, []);
+
+  const signOut = async () => {
+    try {
+      await api.logout();
+    } finally {
+      setDatabases([]);
+      setTurnsByDb({});
+      setView("home");
+      setMe((m) => (m ? { ...m, user: null } : m));
+    }
+  };
 
   // Pick a valid database once the list is known.
   useEffect(() => {
@@ -155,8 +216,16 @@ export default function App() {
     addTurn(turn);
     setQuestion("");
     try {
-      const r = await api.generate({ database_id: dbId, question: turn.question!, history: context });
+      const r = await api.generateStream({ database_id: dbId, question: turn.question!, history: context }, (message) =>
+        setTurnsByDb((all) => ({
+          ...all,
+          [dbId]: (all[dbId] ?? []).map((t) =>
+            t.id === turn.id && t.steps?.at(-1) !== message ? { ...t, steps: [...(t.steps ?? []), message] } : t,
+          ),
+        })),
+      );
       patchTurn(dbId, turn.id, {
+        usedMemory: r.used_memory,
         status: "done",
         sql: r.sql,
         explanation: r.explanation,
@@ -167,6 +236,8 @@ export default function App() {
         historyId: r.history_id,
         queryDb: r.database_id,
         routedFrom: r.routed_from,
+        summary: r.summary,
+        followups: r.followups,
       });
     } catch (e) {
       patchTurn(dbId, turn.id, { status: "done", error: errorMessage(e) });
@@ -184,6 +255,17 @@ export default function App() {
       [target]: [...(all[target] ?? []), { ...turn, databaseId: target, routedFrom: null }],
     }));
     setDbId(target);
+  };
+
+  const teach = async (turn: Turn, sql: string) => {
+    if (!turn.question) return;
+    try {
+      await api.teachExample(turn.queryDb ?? turn.databaseId, turn.question, sql);
+      notify("Saved. Similar questions will now see this SQL");
+    } catch (e) {
+      notify(errorMessage(e), "error");
+      throw e;
+    }
   };
 
   const dbName = (id: string) => databases.find((d) => d.id === id)?.name ?? id;
@@ -212,6 +294,7 @@ export default function App() {
         error: r.error,
         answerable: true,
         attempts: [],
+        historyId: r.history_id ?? turn.historyId,
       });
     } catch (e) {
       patchTurn(turn.databaseId, turn.id, { status: "done", error: errorMessage(e) });
@@ -225,6 +308,20 @@ export default function App() {
       runSql(sqlDraft);
       setSqlDraft("");
       setComposerKey((k) => k + 1);
+    }
+  };
+
+  const pinned = useMemo(() => new Set(history.filter((h) => h.starred).map((h) => h.id)), [history]);
+
+  const togglePin = async (turn: Turn) => {
+    if (turn.historyId == null) return;
+    const pin = !pinned.has(turn.historyId);
+    try {
+      const updated = await api.starHistory(turn.historyId, pin);
+      setHistory((h) => h.map((i) => (i.id === updated.id ? updated : i)));
+      notify(pin ? "Pinned to your dashboard." : "Removed from your dashboard.");
+    } catch (e) {
+      notify(errorMessage(e), "error");
     }
   };
 
@@ -271,12 +368,12 @@ export default function App() {
       setSchemaLoading(true);
       api.schema(info.id).then(setSchema).finally(() => setSchemaLoading(false));
     }
-    notify(`“${info.name}” is ready. Ask it a question!`);
+    notify(`“${info.name}” is ready`);
   };
 
   const deleteDatabase = async () => {
     if (!db?.deletable) return;
-    if (!confirm(`Delete the uploaded database “${db.name}”? This can't be undone.`)) return;
+    if (!confirm(`Delete the database “${db.name}”? This can't be undone.`)) return;
     try {
       await api.deleteDatabase(db.id);
       setTurnsByDb(({ [db.id]: _removed, ...rest }) => rest);
@@ -292,6 +389,37 @@ export default function App() {
     const quoted = /^[a-z_][a-z0-9_]*$/i.test(table) ? table : `"${table.replace(/"/g, '""')}"`;
     runSql(`SELECT * FROM ${quoted} LIMIT 50`, `Preview of ${table}`);
   };
+
+  const downloadReport = () => {
+    const html = buildReport(turns, db?.name ?? "database");
+    downloadText(`sawaal-report-${new Date().toISOString().slice(0, 10)}.html`, html, "text/html;charset=utf-8");
+    notify("Report downloaded. Open it in a browser or print it to PDF.");
+  };
+
+  const commands: Command[] = [
+    ...(
+      [
+        ["home", "Home"],
+        ["ask", "Ask a question"],
+        ["documents", "Documents"],
+        ["training", "Training"],
+        ["dashboard", "Dashboard"],
+        ["explore", "Explore data"],
+        ["usage", "Usage"],
+        ...(isAdmin ? [["admin", "Admin"]] : []),
+      ] as [View, string][]
+    ).map(([v, label]) => ({ id: `view-${v}`, group: "Go to", label, run: () => setView(v) })),
+    ...databases
+      .filter((d) => d.id !== dbId)
+      .map((d) => ({ id: `db-${d.id}`, group: "Switch database", label: d.name, run: () => setDbId(d.id) })),
+    { id: "upload", group: "Action", label: "Add data", hint: "Upload a file or connect a database", run: () => setUploadOpen(true) },
+    { id: "theme", group: "Action", label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme", run: () => setTheme(theme === "dark" ? "light" : "dark") },
+    { id: "new", group: "Action", label: "Start a new conversation", run: () => { setView("ask"); newConversation(); } },
+    ...(turns.length ? [{ id: "report", group: "Action", label: "Download report of this conversation", run: downloadReport }] : []),
+    ...(llmEnabled
+      ? examples.map((q) => ({ id: `ex-${q}`, group: "Try asking", label: q, run: () => { setView("ask"); ask(q); } }))
+      : []),
+  ];
 
   // ---------- render ----------
   if (connectError && !health) {
@@ -310,154 +438,262 @@ export default function App() {
     );
   }
 
+  if (needsLogin) return <Login onDone={loadDatabases} />;
+
   const uploaded = databases.filter((d) => d.kind === "upload");
+  const totalRows = schema?.tables.reduce((n, t) => n + (t.row_count ?? 0), 0) ?? 0;
+
+  const nav: { id: View; label: string; icon: typeof MessageSquare; badge?: number }[] = [
+    { id: "home", label: "Home", icon: HomeIcon },
+    { id: "ask", label: "Ask", icon: MessageSquare },
+    { id: "documents", label: "Documents", icon: BookOpen },
+    { id: "training", label: "Training", icon: GraduationCap },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, badge: pinned.size || undefined },
+    { id: "explore", label: "Explore", icon: Network },
+    { id: "usage", label: "Usage", icon: Activity },
+    ...(isAdmin ? [{ id: "admin" as View, label: "Admin", icon: ShieldCheck }] : []),
+  ];
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <button className="icon-btn mobile-only" onClick={() => setSidebarOpen((o) => !o)} aria-label="Toggle sidebar">
-          {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+    <div className="shell">
+      <nav className="rail" aria-label="Main">
+        <button className="brand" title="Sawaal home" aria-label="Home" onClick={() => setView("home")}>
+          <img src="/favicon.svg" alt="" width={28} height={28} />
         </button>
-        <div className="brand">
-          <img src="/favicon.svg" alt="" width={26} height={26} />
-          <span>Text-to-SQL</span>
-        </div>
+        {nav.map(({ id, label, icon: Icon, badge }) => (
+          <button
+            key={id}
+            className={"rail-btn" + (view === id ? " active" : "")}
+            aria-current={view === id ? "page" : undefined}
+            onClick={() => {
+              setView(id);
+              setSidebarOpen(false);
+            }}
+          >
+            <span className="rail-icon">
+              <Icon size={19} />
+              {badge !== undefined && <span className="rail-badge">{badge}</span>}
+            </span>
+            <span>{label}</span>
+          </button>
+        ))}
+        <div className="rail-spacer" />
+        <button
+          className="rail-btn"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          <span className="rail-icon">{theme === "dark" ? <Sun size={19} /> : <Moon size={19} />}</span>
+          <span>{theme === "dark" ? "Light" : "Dark"}</span>
+        </button>
+        {me?.auth_enabled && me.user && (
+          <button className="rail-btn" onClick={signOut} title={`Signed in as ${me.user.username} (${me.user.role}). Click to sign out`}>
+            <span className="rail-icon">
+              <LogOut size={19} />
+            </span>
+            <span className="rail-user">{me.user.username}</span>
+          </button>
+        )}
+      </nav>
 
-        <div className="db-picker">
-          <Database size={15} className="muted" />
-          <select value={dbId ?? ""} onChange={(e) => setDbId(e.target.value)} aria-label="Database">
-            {databases.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-                {d.kind === "upload" ? " (uploaded)" : d.kind === "external" ? ` (${d.dialect})` : ""}
-              </option>
-            ))}
-          </select>
-          {db?.deletable && (
-            <button className="icon-btn" onClick={deleteDatabase} title="Delete this uploaded database">
-              <Trash2 size={15} />
+      <div className="stage">
+        <header className="bar">
+          {view === "ask" && (
+            <button className="icon-btn panel-toggle" onClick={() => setSidebarOpen((o) => !o)} aria-label="Toggle schema and history">
+              {sidebarOpen ? <X size={18} /> : <PanelLeft size={18} />}
             </button>
           )}
-        </div>
-
-        <div className="topbar-actions">
-          <button className="ghost-btn" onClick={() => setUploadOpen(true)}>
-            <Upload size={15} /> <span className="hide-sm">Upload data</span>
-          </button>
-          <span
-            className={"status-pill " + (llmEnabled ? "on" : "off")}
-            title={llmEnabled ? `Using ${health?.model}` : "Set ANTHROPIC_API_KEY or GROQ_API_KEY in .env to enable AI questions"}
-          >
-            <span className="dot" /> <span className="hide-sm">{llmEnabled ? `${aiName} ready` : "AI off"}</span>
+          <span className="wordmark" aria-label="Sawaal">
+            Sawaal
           </span>
-          <button
-            className="icon-btn"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            title="Toggle theme"
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-        </div>
-      </header>
-
-      <div className="layout">
-        <aside className={"sidebar" + (sidebarOpen ? " open" : "")}>
-          <div className="sidebar-tabs" role="tablist">
-            <button role="tab" aria-selected={tab === "schema"} className={tab === "schema" ? "active" : ""} onClick={() => setTab("schema")}>
-              <Database size={14} /> Schema
-            </button>
-            <button role="tab" aria-selected={tab === "history"} className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
-              <HistoryIcon size={14} /> History {history.length > 0 && <span className="badge">{history.length}</span>}
-            </button>
-          </div>
-          <div className="sidebar-body">
-            {tab === "schema" ? (
-              <SchemaPanel schema={schema} loading={schemaLoading} error={schemaError} onPreview={previewTable} />
-            ) : (
-              <HistoryPanel items={history} onOpen={openHistory} onStar={starHistory} onDelete={deleteHistory} onClear={clearHistory} />
+          <div className="db-picker">
+            <Database size={16} />
+            <select value={dbId ?? ""} onChange={(e) => setDbId(e.target.value)} aria-label="Database">
+              {databases.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                  {d.kind === "upload" ? " (uploaded)" : d.kind === "external" ? ` (${d.dialect})` : ""}
+                </option>
+              ))}
+            </select>
+            {db?.deletable && isAdmin && (
+              <button className="icon-btn" onClick={deleteDatabase} title="Delete this database" aria-label="Delete database">
+                <Trash2 size={15} />
+              </button>
             )}
           </div>
-        </aside>
-        {sidebarOpen && <div className="scrim mobile-only" onClick={() => setSidebarOpen(false)} />}
+          <div className="bar-actions">
+            <button className="search-btn" onClick={() => setPaletteOpen(true)} aria-label="Open command palette">
+              <Search size={14} /> <span className="hide-sm">Search</span> <kbd className="hide-sm">⌘K</kbd>
+            </button>
+            {canTeach && (
+              <button className="ghost-btn" onClick={() => setUploadOpen(true)}>
+                <Upload size={15} /> <span className="hide-sm">Add data</span>
+              </button>
+            )}
+            <span
+              className={"status-pill " + (llmEnabled ? "on" : "off")}
+              title={llmEnabled ? `Using ${health?.model}` : "Set ANTHROPIC_API_KEY or GROQ_API_KEY in .env to enable AI questions"}
+            >
+              <span className="dot" /> {llmEnabled ? `${aiName} ready` : "AI off"}
+            </span>
+          </div>
+        </header>
 
-        <main className="main">
-          <div className="conversation">
-            {turns.length === 0 ? (
-              <section className="welcome">
-                <h1>Ask your data anything</h1>
-                <p className="muted">
-                  {db?.description ? db.description.replace(/([^.!?])$/, "$1.") : "Type a question in plain English."}{" "}
-                  {aiName} writes the SQL, the app runs it read-only, and you get the answer as a table or chart.
-                </p>
-                {!llmEnabled && health && (
-                  <div className="notice info">
-                    <div>
-                      <strong>AI questions are turned off.</strong>
-                      <p>
-                        Add <code>GROQ_API_KEY=…</code> (free) or <code>ANTHROPIC_API_KEY=…</code> to the <code>.env</code>{" "}
-                        file and restart the server. You can still browse the schema and run your own SQL.
-                      </p>
-                    </div>
-                  </div>
+        <div className={"workspace" + (view === "ask" ? " with-panel" : "")}>
+          {view === "ask" && (
+            <aside className={"sidebar" + (sidebarOpen ? " open" : "")}>
+              <div className="sidebar-tabs" role="tablist">
+                <button role="tab" aria-selected={tab === "schema"} className={tab === "schema" ? "active" : ""} onClick={() => setTab("schema")}>
+                  <Database size={14} /> Tables
+                </button>
+                <button role="tab" aria-selected={tab === "history"} className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
+                  <HistoryIcon size={14} /> History {history.length > 0 && <span className="badge">{history.length}</span>}
+                </button>
+              </div>
+              <div className="sidebar-body">
+                {tab === "schema" ? (
+                  <SchemaPanel schema={schema} loading={schemaLoading} error={schemaError} onPreview={previewTable} />
+                ) : (
+                  <HistoryPanel items={history} onOpen={openHistory} onStar={starHistory} onDelete={deleteHistory} onClear={clearHistory} />
                 )}
-                {examples.length > 0 && llmEnabled && (
-                  <div className="examples">
-                    <span className="label">Try one of these</span>
-                    <div className="chips">
-                      {examples.map((q) => (
-                        <button key={q} className="chip" onClick={() => ask(q)} disabled={busy}>
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </section>
-            ) : (
+              </div>
+            </aside>
+          )}
+          {view === "ask" && sidebarOpen && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
+
+          <main className="main">
+            {view === "home" && (
+              <Home
+                databases={databases}
+                llmEnabled={llmEnabled}
+                aiName={aiName}
+                onOpenDb={(id) => {
+                  setDbId(id);
+                  setView("ask");
+                }}
+                onGo={setView}
+                onUpload={() => setUploadOpen(true)}
+              />
+            )}
+            {view === "training" && dbId && (
+              <TrainingView key={dbId} databaseId={dbId} databaseName={db?.name ?? dbId} canEdit={canTeach} onNotify={notify} />
+            )}
+            {view === "admin" && isAdmin && <AdminView authEnabled={!!me?.auth_enabled} onNotify={notify} />}
+            {view === "documents" && (
+              <DocumentsView databases={databases} defaultDb={dbId} llmEnabled={llmEnabled} onNotify={notify} />
+            )}
+            {view === "dashboard" && dbId && (
+              <Dashboard
+                key={dbId}
+                databaseId={dbId}
+                databaseName={db?.name ?? dbId}
+                theme={theme}
+                onChanged={refreshHistory}
+                onBack={() => setView("ask")}
+              />
+            )}
+            {view === "explore" && dbId && <ExploreView key={dbId} databaseId={dbId} databaseName={db?.name ?? dbId} schema={schema} />}
+            {view === "usage" && dbId && <UsageView key={dbId} databaseId={dbId} databaseName={db?.name ?? dbId} />}
+
+            {view === "ask" && (
               <>
-                <div className="conversation-head">
-                  <button className="ghost-btn" onClick={newConversation} disabled={busy}>
-                    <MessageSquarePlus size={15} /> New conversation
-                  </button>
+                <div className="conversation">
+                  {turns.length === 0 ? (
+                    <section className="welcome">
+                      <h1>Ask your data a question</h1>
+                      <p className="lede">
+                        {db?.description ? db.description.replace(/([^.!?])$/, "$1.") : "Type a question in plain English."}
+                      </p>
+                      {schema && (
+                        <p className="facts">
+                          {schema.tables.length} tables, {totalRows.toLocaleString()} rows. {aiName} writes the SQL, runs it read-only
+                          and shows you the answer.
+                        </p>
+                      )}
+                      {!llmEnabled && health && (
+                        <div className="notice info">
+                          <div>
+                            <strong>AI questions are turned off.</strong>
+                            <p>
+                              Add <code>GROQ_API_KEY=…</code> (free) or <code>ANTHROPIC_API_KEY=…</code> to the <code>.env</code> file and
+                              restart the server. You can still browse the schema and run your own SQL.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {examples.length > 0 && llmEnabled && (
+                        <div className="examples">
+                          <h2>Try asking</h2>
+                          <ul className="prompts">
+                            {examples.map((q) => (
+                              <li key={q}>
+                                <button className="prompt" onClick={() => ask(q)} disabled={busy}>
+                                  {q}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </section>
+                  ) : (
+                    <>
+                      <div className="conversation-head">
+                        <button className="ghost-btn" onClick={downloadReport} disabled={busy} title="Download this conversation as a report">
+                          <FileText size={15} /> Report
+                        </button>
+                        <button className="ghost-btn" onClick={newConversation} disabled={busy}>
+                          <MessageSquarePlus size={15} /> New conversation
+                        </button>
+                      </div>
+                      {turns.map((t) => (
+                        <TurnCard
+                          key={t.id}
+                          turn={t}
+                          schema={schema}
+                          dialect={db?.dialect ?? "sqlite"}
+                          theme={theme}
+                          onRun={rerun}
+                          dbName={dbName}
+                          onSwitchDb={switchToAnswerDb}
+                          onAsk={ask}
+                          pinned={t.historyId != null && pinned.has(t.historyId)}
+                          onPin={togglePin}
+                          onTeach={canTeach ? teach : undefined}
+                          canAsk={llmEnabled && !busy}
+                          llmEnabled={llmEnabled}
+                        />
+                      ))}
+                    </>
+                  )}
+                  <div ref={endRef} />
                 </div>
-                {turns.map((t) => (
-                  <TurnCard
-                    key={t.id}
-                    turn={t}
-                    schema={schema}
-                    dialect={db?.dialect ?? "sqlite"}
-                    theme={theme}
-                    onRun={rerun}
-                    dbName={dbName}
-                    onSwitchDb={switchToAnswerDb}
-                  />
-                ))}
+
+                <Composer
+                  mode={mode}
+                  onModeChange={setMode}
+                  question={question}
+                  onQuestionChange={setQuestion}
+                  sql={sqlDraft}
+                  onSqlChange={setSqlDraft}
+                  onSubmit={submit}
+                  busy={busy}
+                  llmEnabled={llmEnabled}
+                  followUp={turns.some((t) => t.status === "done" && !!t.sql)}
+                  schema={schema}
+                  dialect={db?.dialect ?? "sqlite"}
+                  theme={theme}
+                  resetKey={composerKey}
+                />
               </>
             )}
-            <div ref={endRef} />
-          </div>
-
-          <Composer
-            mode={mode}
-            onModeChange={setMode}
-            question={question}
-            onQuestionChange={setQuestion}
-            sql={sqlDraft}
-            onSqlChange={setSqlDraft}
-            onSubmit={submit}
-            busy={busy}
-            llmEnabled={llmEnabled}
-            followUp={turns.some((t) => t.status === "done" && !!t.sql)}
-            schema={schema}
-            dialect={db?.dialect ?? "sqlite"}
-            theme={theme}
-            resetKey={composerKey}
-          />
-        </main>
+          </main>
+        </div>
       </div>
 
-      <UploadDialog open={uploadOpen} uploadedDatabases={uploaded} onClose={() => setUploadOpen(false)} onUploaded={onUploaded} />
+      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+      <UploadDialog canConnect={isAdmin} open={uploadOpen} uploadedDatabases={uploaded} onClose={() => setUploadOpen(false)} onUploaded={onUploaded} />
 
       {toast && (
         <div className={"toast " + toast.kind} role="status">

@@ -1,3 +1,3 @@
-"""Text-to-SQL: ask questions about your data in plain English, powered by Claude."""
+"""Sawaal: ask questions about your data in plain English."""
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"

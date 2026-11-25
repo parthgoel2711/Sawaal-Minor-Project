@@ -55,6 +55,22 @@ class Settings(BaseSettings):
     max_rows: int = 1000
     query_timeout_seconds: float = 15.0
     max_upload_mb: int = 50
+    # Hide columns that look like personal data (email, phone, password, Aadhaar...) in every result.
+    mask_pii: bool = True
+    # Plain-English questions allowed per client per minute (0 turns the limit off).
+    rate_limit_per_minute: int = 30
+
+    # --- Sign-in (off by default: everyone is a local admin) ---
+    # Answer a prepared set of questions without any AI key. For presentations; the app labels it "Demo AI".
+    demo_mode: bool = False
+    auth_enabled: bool = False
+    session_hours: int = 12
+    # Password for the first admin. If empty, one is generated and printed once at first start.
+    admin_password: str | None = None
+    # Also create demo users (analyst and viewer) with documented passwords. For presentations only.
+    demo_users: bool = False
+    # Comma-separated tables that viewers may not read or even see (e.g. "payroll,performance_reviews").
+    restricted_tables: str = ""
 
     # Extra databases, as "name=sqlalchemy_url" pairs separated by ";"
     # e.g. "analytics=postgresql+psycopg://readonly:pw@localhost/analytics"
@@ -76,8 +92,10 @@ class Settings(BaseSettings):
         return bool(self.groq_api_key or os.environ.get("GROQ_API_KEY"))
 
     @property
-    def provider(self) -> Literal["anthropic", "groq"] | None:
+    def provider(self) -> Literal["anthropic", "groq", "demo"] | None:
         """The AI provider in use, or None when no usable API key is configured."""
+        if self.demo_mode:
+            return "demo"
         if self.llm_provider == "anthropic":
             return "anthropic" if self.has_anthropic_key else None
         if self.llm_provider == "groq":
@@ -94,6 +112,8 @@ class Settings(BaseSettings):
 
     @property
     def active_model(self) -> str:
+        if self.provider == "demo":
+            return "prepared answers"
         return self.groq_model if self.provider == "groq" else self.claude_model
 
     @property
@@ -111,6 +131,10 @@ class Settings(BaseSettings):
     @property
     def app_db_path(self) -> Path:
         return self.data_dir / "app.db"
+
+    @property
+    def restricted_table_set(self) -> frozenset[str]:
+        return frozenset(t.strip().lower() for t in self.restricted_tables.split(",") if t.strip())
 
     @property
     def cors_origin_list(self) -> list[str]:

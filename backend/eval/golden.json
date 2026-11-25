@@ -1,0 +1,205 @@
+[
+  {
+    "id": "eco-01",
+    "database": "ecommerce",
+    "difficulty": "easy",
+    "question": "How many customers are there?",
+    "gold_sql": "SELECT COUNT(*) FROM customers"
+  },
+  {
+    "id": "eco-02",
+    "database": "ecommerce",
+    "difficulty": "easy",
+    "question": "How many orders were cancelled?",
+    "gold_sql": "SELECT COUNT(*) FROM orders WHERE status = 'cancelled'"
+  },
+  {
+    "id": "eco-03",
+    "database": "ecommerce",
+    "difficulty": "easy",
+    "question": "List all product categories.",
+    "gold_sql": "SELECT name FROM categories"
+  },
+  {
+    "id": "eco-04",
+    "database": "ecommerce",
+    "difficulty": "medium",
+    "question": "How many orders were placed with each payment method?",
+    "gold_sql": "SELECT payment_method, COUNT(*) FROM orders GROUP BY payment_method"
+  },
+  {
+    "id": "eco-05",
+    "database": "ecommerce",
+    "difficulty": "medium",
+    "question": "Which products have fewer than 10 units in stock?",
+    "gold_sql": "SELECT name FROM products WHERE stock_quantity < 10"
+  },
+  {
+    "id": "eco-06",
+    "database": "ecommerce",
+    "difficulty": "medium",
+    "question": "Which product category has the highest average review rating?",
+    "gold_sql": "SELECT c.name FROM categories c JOIN products p ON p.category_id = c.category_id JOIN reviews r ON r.product_id = p.product_id GROUP BY c.category_id ORDER BY AVG(r.rating) DESC LIMIT 1"
+  },
+  {
+    "id": "eco-07",
+    "database": "ecommerce",
+    "difficulty": "hard",
+    "question": "List products that have never been ordered.",
+    "gold_sql": "SELECT name FROM products WHERE product_id NOT IN (SELECT product_id FROM order_items)"
+  },
+  {
+    "id": "eco-08",
+    "database": "ecommerce",
+    "difficulty": "hard",
+    "question": "Which 3 customers placed the most orders, and how many did each place?",
+    "gold_sql": "SELECT c.first_name, c.last_name, COUNT(*) AS n FROM orders o JOIN customers c ON c.customer_id = o.customer_id GROUP BY c.customer_id ORDER BY n DESC LIMIT 3"
+  },
+  {
+    "id": "eco-09",
+    "database": "ecommerce",
+    "difficulty": "hard",
+    "question": "How many orders were placed in each year?",
+    "gold_sql": "SELECT strftime('%Y', order_date) AS year, COUNT(*) FROM orders GROUP BY year"
+  },
+  {
+    "id": "sch-01",
+    "database": "school",
+    "difficulty": "easy",
+    "question": "How many students are there?",
+    "gold_sql": "SELECT COUNT(*) FROM students"
+  },
+  {
+    "id": "sch-02",
+    "database": "school",
+    "difficulty": "easy",
+    "question": "List all subjects.",
+    "gold_sql": "SELECT name FROM subjects"
+  },
+  {
+    "id": "sch-03",
+    "database": "school",
+    "difficulty": "medium",
+    "question": "How many students are in each class?",
+    "gold_sql": "SELECT c.name, COUNT(*) FROM students s JOIN classes c ON c.class_id = s.class_id GROUP BY c.class_id"
+  },
+  {
+    "id": "sch-04",
+    "database": "school",
+    "difficulty": "medium",
+    "question": "How many female students are there?",
+    "gold_sql": "SELECT COUNT(*) FROM students WHERE gender = 'Female'"
+  },
+  {
+    "id": "sch-05",
+    "database": "school",
+    "difficulty": "medium",
+    "question": "Which subject has the highest average marks in the Final exam?",
+    "gold_sql": "SELECT sb.name FROM marks m JOIN exams e ON e.exam_id = m.exam_id JOIN subjects sb ON sb.subject_id = m.subject_id WHERE e.name = 'Final' GROUP BY sb.subject_id ORDER BY AVG(m.marks_obtained) DESC LIMIT 1"
+  },
+  {
+    "id": "sch-06",
+    "database": "school",
+    "difficulty": "hard",
+    "question": "How many students have an overall attendance below 75%?",
+    "gold_sql": "SELECT COUNT(*) FROM (SELECT student_id FROM attendance GROUP BY student_id HAVING SUM(days_present) * 100.0 / SUM(working_days) < 75)"
+  },
+  {
+    "id": "com-01",
+    "database": "company",
+    "difficulty": "easy",
+    "question": "How many employees are currently active?",
+    "gold_sql": "SELECT COUNT(*) FROM employees WHERE status = 'Active'"
+  },
+  {
+    "id": "com-02",
+    "database": "company",
+    "difficulty": "easy",
+    "question": "How many departments are there?",
+    "gold_sql": "SELECT COUNT(*) FROM departments"
+  },
+  {
+    "id": "com-03",
+    "database": "company",
+    "difficulty": "medium",
+    "question": "What is the average annual salary in each department?",
+    "gold_sql": "SELECT d.name, AVG(e.annual_salary) FROM employees e JOIN departments d ON d.department_id = e.department_id GROUP BY d.department_id"
+  },
+  {
+    "id": "com-04",
+    "database": "company",
+    "difficulty": "medium",
+    "question": "How many employees work in each work mode?",
+    "gold_sql": "SELECT work_mode, COUNT(*) FROM employees GROUP BY work_mode"
+  },
+  {
+    "id": "com-05",
+    "database": "company",
+    "difficulty": "medium",
+    "question": "Which department has the most active employees?",
+    "gold_sql": "SELECT d.name FROM employees e JOIN departments d ON d.department_id = e.department_id WHERE e.status = 'Active' GROUP BY d.department_id ORDER BY COUNT(*) DESC LIMIT 1"
+  },
+  {
+    "id": "com-06",
+    "database": "company",
+    "difficulty": "hard",
+    "question": "How many approved sick leave days were taken in total in 2025?",
+    "gold_sql": "SELECT SUM(days) FROM leaves WHERE leave_type = 'Sick' AND status = 'Approved' AND strftime('%Y', start_date) = '2025'"
+  },
+  {
+    "id": "com-07",
+    "database": "company",
+    "difficulty": "hard",
+    "question": "What is the average performance rating for each review year?",
+    "gold_sql": "SELECT review_year, AVG(rating) FROM performance_reviews GROUP BY review_year"
+  },
+  {
+    "id": "gov-01",
+    "database": "government",
+    "difficulty": "easy",
+    "question": "How many states are there?",
+    "gold_sql": "SELECT COUNT(*) FROM states"
+  },
+  {
+    "id": "gov-02",
+    "database": "government",
+    "difficulty": "easy",
+    "question": "How many hospitals are there?",
+    "gold_sql": "SELECT COUNT(*) FROM hospitals"
+  },
+  {
+    "id": "gov-03",
+    "database": "government",
+    "difficulty": "medium",
+    "question": "How many hospitals of each type are there?",
+    "gold_sql": "SELECT type, COUNT(*) FROM hospitals GROUP BY type"
+  },
+  {
+    "id": "gov-04",
+    "database": "government",
+    "difficulty": "medium",
+    "question": "Which state has the largest population?",
+    "gold_sql": "SELECT name FROM states ORDER BY population DESC LIMIT 1"
+  },
+  {
+    "id": "gov-05",
+    "database": "government",
+    "difficulty": "medium",
+    "question": "How many grievances are still pending?",
+    "gold_sql": "SELECT COUNT(*) FROM grievances WHERE status = 'Pending'"
+  },
+  {
+    "id": "gov-06",
+    "database": "government",
+    "difficulty": "hard",
+    "question": "What is the total amount allocated to each scheme in 2025-26?",
+    "gold_sql": "SELECT s.name, SUM(a.allocated_crore) FROM scheme_allocations a JOIN schemes s ON s.scheme_id = a.scheme_id WHERE a.financial_year = '2025-26' GROUP BY s.scheme_id"
+  },
+  {
+    "id": "gov-07",
+    "database": "government",
+    "difficulty": "hard",
+    "question": "How many aspirational districts does each state have?",
+    "gold_sql": "SELECT s.name, COUNT(*) FROM districts d JOIN states s ON s.state_id = d.state_id WHERE d.is_aspirational = 1 GROUP BY s.state_id"
+  }
+]

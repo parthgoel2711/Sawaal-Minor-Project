@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import sqlite3
 import tempfile
 import threading
@@ -23,10 +24,20 @@ from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
 from .config import Settings
+from .connections import ConnectionError_, ConnectionStore, display_url, normalize_url
 from .importer import UploadError, check_sqlite_file, import_csv, slugify
-from .schemas import ColumnOut, DatabaseOut, QueryResult, SchemaOut, TableOut
+from .schemas import (
+    ColumnOut,
+    DatabaseOut,
+    ProfileColumn,
+    ProfileOut,
+    ProfileTable,
+    QueryResult,
+    SchemaOut,
+    TableOut,
+)
 from .seed import SAMPLE_DATABASES
-from .sql_guard import to_sqlglot_dialect, validate_read_only
+from .sql_guard import UnsafeSQLError, referenced_tables, to_sqlglot_dialect, validate_read_only
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +65,7 @@ class DatabaseInfo:
     description: str = ""
     path: Path | None = None  # SQLite file
     url: str | None = None  # external SQLAlchemy URL (never sent to clients)
+    saved: bool = False  # connected from the app (stored encrypted) rather than set in .env
 
     def to_out(self) -> DatabaseOut:
         return DatabaseOut(
@@ -62,7 +74,7 @@ class DatabaseInfo:
             kind=self.kind,
             dialect=self.dialect,
             description=self.description,
-            deletable=self.kind == "upload",
+            deletable=self.kind == "upload" or self.saved,
         )
 
 
@@ -77,6 +89,30 @@ def _sqlite_read_only_engine(path: Path) -> Engine:
 
     # NullPool: no file handles stay open, so uploaded files can be deleted on Windows.
     return create_engine("sqlite://", creator=creator, poolclass=NullPool)
+
+
+PERSONAL_COLUMN = re.compile(
+    r"(^|_)(e?mail|phone|mobile|contact_no|password|passwd|pwd|aadhaar|aadhar|ssn|passport|pan_?(no|number)?|"
+    r"card_?(no|number)|cvv|iban|account_?(no|number))($|_)",
+    re.IGNORECASE,
+)
+
+
+def mask_personal_data(columns: list[str], rows: list[list[Any]]) -> list[str]:
+    """Hide values in columns that look like personal data (in place). Returns the hidden column names."""
+    hidden = [i for i, name in enumerate(columns) if PERSONAL_COLUMN.search(name)]
+    for i in hidden:
+        for row in rows:
+            v = row[i]
+            if v is None:
+                continue
+            text = str(v)
+            if "@" in text:
+                local, _, domain = text.partition("@")
+                row[i] = f"{local[:1]}•••@{domain}"
+            else:
+                row[i] = "•••" + text[-2:] if len(text) > 4 else "••••"
+    return [columns[i] for i in hidden]
 
 
 def to_jsonable(value: Any) -> Any:
@@ -116,6 +152,7 @@ class DatabaseRegistry:
         self._engines: dict[str, Engine] = {}
         self._schemas: dict[str, SchemaOut] = {}
         self._prompts: dict[str, str] = {}
+        self.connections = ConnectionStore(settings.data_dir)
 
     # ---------- discovery ----------
 
@@ -145,6 +182,19 @@ class DatabaseRegistry:
             dbs[db_id] = DatabaseInfo(
                 id=db_id, name=name, kind="external", dialect=dialect, url=url,
                 description=f"External {dialect} database",
+            )
+
+        for saved in self.connections.list():
+            try:
+                url = normalize_url(saved.url)
+            except ConnectionError_ as e:
+                log.warning("Skipping saved connection %r: %s", saved.name, e)
+                continue
+            db_id = self._unique_id(slugify(saved.name, "db"), dbs)
+            dbs[db_id] = DatabaseInfo(
+                id=db_id, name=saved.name, kind="external", dialect=url.get_backend_name(),
+                url=url.render_as_string(hide_password=False), saved=True,
+                description=f"Connected {url.get_backend_name()} database ({display_url(url)})",
             )
 
         if s.uploads_dir.exists():
@@ -334,15 +384,19 @@ class DatabaseRegistry:
             lines.append(" ".join(parts))
         return f"CREATE TABLE {name} (\n" + ",\n".join(lines) + "\n)"
 
-    def schema_prompt(self, db_id: str) -> str:
-        """Compact, LLM-friendly description of the schema (DDL + sample rows + known values)."""
-        with self._lock:
-            cached = self._prompts.get(db_id)
-        if cached is not None:
-            return cached
+    def schema_prompt(self, db_id: str, hide: frozenset[str] = frozenset()) -> str:
+        """Compact, LLM-friendly description of the schema (DDL + sample rows + known values).
+        Tables named in `hide` are left out, so a restricted user's questions never even see them."""
+        if not hide:
+            with self._lock:
+                cached = self._prompts.get(db_id)
+            if cached is not None:
+                return cached
         schema = self.schema(db_id)
         parts: list[str] = []
         for t in schema.tables:
+            if t.name.lower() in hide:
+                continue
             block = [t.ddl.rstrip(";") + ";"]
             if t.row_count is not None:
                 block.append(f"-- {t.row_count} rows")
@@ -362,8 +416,9 @@ class DatabaseRegistry:
                     block.append("--   (" + ", ".join(cells) + ")")
             parts.append("\n".join(block))
         prompt = "\n\n".join(parts)
-        with self._lock:
-            self._prompts[db_id] = prompt
+        if not hide:
+            with self._lock:
+                self._prompts[db_id] = prompt
         return prompt
 
     def catalog_text(self, exclude: str | None = None, max_tables: int = 40, max_columns: int = 20) -> str:
@@ -386,13 +441,19 @@ class DatabaseRegistry:
 
     # ---------- execution ----------
 
-    def execute(self, db_id: str, sql: str) -> tuple[str, QueryResult]:
+    def execute(
+        self, db_id: str, sql: str, blocked_tables: frozenset[str] = frozenset()
+    ) -> tuple[str, QueryResult]:
         """Validate and run `sql` read-only. Returns (cleaned_sql, result).
 
         Raises UnsafeSQLError for disallowed SQL and QueryError for runtime failures.
         """
         info = self.get(db_id)
         cleaned = validate_read_only(sql, to_sqlglot_dialect(info.dialect))
+        if blocked_tables:
+            denied = sorted(referenced_tables(cleaned, to_sqlglot_dialect(info.dialect)) & blocked_tables)
+            if denied:
+                raise QueryError(f"Your account is not allowed to read the table {', '.join(denied)}.")
         engine = self.engine(db_id)
         max_rows = self.settings.max_rows
         timeout = self.settings.query_timeout_seconds
@@ -422,6 +483,7 @@ class DatabaseRegistry:
 
         truncated = len(raw_rows) > max_rows
         rows = [[to_jsonable(v) for v in r] for r in raw_rows[:max_rows]]
+        masked = mask_personal_data(columns, rows) if self.settings.mask_pii else []
         column_types = [_column_type([r[i] for r in rows]) for i in range(len(columns))]
         return cleaned, QueryResult(
             columns=columns,
@@ -430,7 +492,56 @@ class DatabaseRegistry:
             row_count=len(rows),
             truncated=truncated,
             elapsed_ms=round(elapsed_ms, 2),
+            masked_columns=masked,
         )
+
+    # ---------- data profile ----------
+
+    def profile(self, db_id: str, max_tables: int = 30, max_columns: int = 40) -> ProfileOut:
+        """Per-column data quality: empty values, distinct values, range. Plain SQL, no AI."""
+        info = self.get(db_id)
+        quote = self.engine(db_id).dialect.identifier_preparer.quote
+        tables: list[ProfileTable] = []
+        for tbl in self.schema(db_id).tables[:max_tables]:
+            cols = tbl.columns[:max_columns]
+            if not cols:
+                continue
+            parts = ["COUNT(*) AS n"]
+            for i, c in enumerate(cols):
+                q = quote(c.name)
+                parts += [f"COUNT({q}) AS nn{i}", f"COUNT(DISTINCT {q}) AS d{i}",
+                          f"MIN({q}) AS lo{i}", f"MAX({q}) AS hi{i}"]
+            try:
+                _, res = self.execute(db_id, f"SELECT {', '.join(parts)} FROM {quote(tbl.name)}")
+            except (QueryError, UnsafeSQLError) as e:
+                log.info("Profile skipped %s.%s: %s", db_id, tbl.name, e)
+                continue
+            row = dict(zip(res.columns, res.rows[0]))
+            n = int(row["n"] or 0)
+            out_cols: list[ProfileColumn] = []
+            for i, c in enumerate(cols):
+                nulls = n - int(row[f"nn{i}"] or 0)
+                distinct = int(row[f"d{i}"] or 0)
+                flags = []
+                if n and nulls / n >= 0.5:
+                    flags.append("mostly empty")
+                if n > 1 and distinct <= 1 and nulls < n:
+                    flags.append("constant")
+                if n > 1 and distinct == n and nulls == 0:
+                    flags.append("unique")
+                out_cols.append(ProfileColumn(
+                    name=c.name, type=c.type, nulls=nulls, null_pct=round(100 * nulls / n, 1) if n else 0.0,
+                    distinct=distinct, min=row[f"lo{i}"], max=row[f"hi{i}"], flags=flags,
+                ))
+            cells = n * len(out_cols)
+            filled = sum(n - c.nulls for c in out_cols)
+            tables.append(ProfileTable(name=tbl.name, row_count=n, columns=out_cols,
+                                       completeness=round(100 * filled / cells, 1) if cells else 100.0))
+        cells = sum(t.row_count * len(t.columns) for t in tables)
+        filled = sum(t.row_count * len(t.columns) * t.completeness / 100 for t in tables)
+        issues = sum(1 for t in tables for c in t.columns if set(c.flags) & {"mostly empty", "constant"})
+        return ProfileOut(database_id=info.id, tables=tables, issues=issues,
+                          completeness=round(100 * filled / cells, 1) if cells else 100.0)
 
     @staticmethod
     def _prepare_connection(conn: Connection, dialect: str, timeout: float) -> None:
@@ -520,6 +631,43 @@ class DatabaseRegistry:
             taken |= {p.stem for p in self.settings.uploads_dir.glob("*.db")}
         return taken
 
+    def add_connection(self, name: str, raw_url: str) -> DatabaseInfo:
+        """Connect to a PostgreSQL/MySQL database, check it works, and remember it (encrypted)."""
+        name = (name or "").strip()
+        if not name:
+            raise ConnectionError_("Give the connection a name.")
+        if any(d.name.lower() == name.lower() for d in self.list()):
+            raise ConnectionError_(f"A database called \u201c{name}\u201d already exists. Choose another name.")
+        url = normalize_url(raw_url)
+        self._probe(url)
+        self.connections.add(name, url.render_as_string(hide_password=False))
+        self.refresh()
+        return next(d for d in self.list() if d.name == name)
+
+    @staticmethod
+    def _probe(url) -> None:
+        """Open one connection and run SELECT 1, with a short timeout, so a bad URL fails here and not later."""
+        engine = create_engine(url, connect_args=_connect_timeout(url.get_backend_name()), pool_pre_ping=True)
+        try:
+            with engine.connect() as conn:
+                conn.exec_driver_sql("SELECT 1")
+        except ModuleNotFoundError as e:
+            raise ConnectionError_(f"The database driver is not installed: {e.name}.") from e
+        except SQLAlchemyError as e:
+            msg = str(getattr(e, "orig", None) or e).strip().splitlines()[0]
+            raise ConnectionError_(f"Could not connect: {msg}") from e
+        finally:
+            engine.dispose()
+
+    def delete_connection(self, db_id: str) -> None:
+        info = self.get(db_id)
+        if not info.saved:
+            raise UploadError("Only databases you connected from the app can be removed here.")
+        with self._lock:
+            self._forget(db_id)
+        self.connections.remove(info.name)
+        self.refresh()
+
     def delete_upload(self, db_id: str) -> None:
         info = self.get(db_id)
         if info.kind != "upload" or info.path is None:
@@ -531,3 +679,7 @@ class DatabaseRegistry:
             if p.exists():
                 p.unlink()
         self.refresh()
+
+
+def _connect_timeout(backend: str) -> dict[str, int]:
+    return {"connect_timeout": 8}
