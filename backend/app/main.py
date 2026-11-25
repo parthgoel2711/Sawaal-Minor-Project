@@ -63,6 +63,15 @@ from .sql_guard import UnsafeSQLError, to_sqlglot_dialect, validate_read_only
 log = logging.getLogger(__name__)
 
 
+def client_ip(request: Request, settings: Settings) -> str:
+    """The caller's address. Behind a proxy (TRUST_PROXY=true) the real one is in a header, not the socket."""
+    if settings.trust_proxy:
+        forwarded = request.headers.get("x-vercel-forwarded-for") or request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def create_app(settings: Settings | None = None, generator: SQLGenerator | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -100,7 +109,8 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
             allow_headers=["*"],
         )
 
-    limiter = RateLimiter(settings.rate_limit_per_minute)
+    # Demo mode costs nothing, so it is not limited (a classroom shares one address behind a proxy).
+    limiter = RateLimiter(0 if settings.provider == "demo" else settings.rate_limit_per_minute)
 
     # ---------- error handling ----------
 
@@ -147,7 +157,7 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
         try:
             request.app.state.audit.add(username=u.username, role=u.role, action=action, status=status,
                                         database_id=database_id, detail=detail,
-                                        ip=request.client.host if request.client else None)
+                                        ip=client_ip(request, settings))
         except Exception:  # noqa: BLE001 - a full disk must not break answering questions
             log.exception("Could not write the audit log")
 
@@ -255,7 +265,7 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
         body = body or AutoDashboardRequest()
         use_ai = body.use_ai and (settings.llm_enabled or generator is not None)
         if use_ai:
-            wait = limiter.check(request.client.host if request.client else "unknown")
+            wait = limiter.check(client_ip(request, settings))
             if wait:
                 use_ai = False  # rate limited: still give the rule-based charts
         widgets, source = suggest_dashboard(
@@ -316,7 +326,7 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
                 answer="I could not find anything about this in your documents. "
                        "Try other words, or upload the document that covers it.",
             )
-        wait = limiter.check(request.client.host if request.client else "unknown")
+        wait = limiter.check(client_ip(request, settings))
         if wait:
             raise HTTPException(
                 status_code=429,
@@ -356,7 +366,7 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
                        "ANTHROPIC_API_KEY for Claude, or GROQ_API_KEY for Groq's free tier. "
                        "You can still write and run SQL yourself.",
             )
-        wait = limiter.check(request.client.host if request.client else "unknown")
+        wait = limiter.check(client_ip(request, settings))
         if wait:
             raise HTTPException(
                 status_code=429,
@@ -451,7 +461,7 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
     def explain(req: ExplainRequest, request: Request):
         if not (settings.llm_enabled or generator is not None):
             raise HTTPException(status_code=503, detail="Add an API key to the .env file to get explanations.")
-        wait = limiter.check(request.client.host if request.client else "unknown")
+        wait = limiter.check(client_ip(request, settings))
         if wait:
             raise HTTPException(
                 status_code=429,
@@ -479,7 +489,7 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
     def login(body: LoginRequest, request: Request, response: Response):
         if not settings.auth_enabled:
             return {"auth_enabled": False, "user": {"username": LOCAL_ADMIN.username, "role": LOCAL_ADMIN.role}}
-        key = f"{request.client.host if request.client else '?'}:{body.username.lower()}"
+        key = f"{client_ip(request, settings)}:{body.username.lower()}"
         wait = login_limiter.check(key)
         if wait:
             raise HTTPException(

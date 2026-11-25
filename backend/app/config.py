@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     # --- Sign-in (off by default: everyone is a local admin) ---
     # Answer a prepared set of questions without any AI key. For presentations; the app labels it "Demo AI".
     demo_mode: bool = False
+    # Behind a proxy (Vercel, nginx) read the caller's address from X-Forwarded-For. Off by default: it can be faked.
+    trust_proxy: bool = False
     auth_enabled: bool = False
     session_hours: int = 12
     # Signs session cookies so they work across several server instances (set this on serverless hosting).
