@@ -82,6 +82,7 @@ export default function App() {
   const role = me?.user?.role ?? "viewer";
   const canTeach = role !== "viewer";
   const isAdmin = role === "admin";
+  const showAdmin = isAdmin && !!me?.auth_enabled; // the Admin page (users, audit log) only matters when sign-in is on
   const needsLogin = !!me && me.auth_enabled && !me.user;
   const aiName = health?.provider === "groq" ? "Groq" : health?.provider === "anthropic" ? "Claude" : health?.provider === "demo" ? "Demo AI" : "AI";
 
@@ -406,7 +407,7 @@ export default function App() {
         ["dashboard", "Dashboard"],
         ["explore", "Explore data"],
         ["usage", "Usage"],
-        ...(isAdmin ? [["admin", "Admin"]] : []),
+        ...(showAdmin ? [["admin", "Admin"]] : []),
       ] as [View, string][]
     ).map(([v, label]) => ({ id: `view-${v}`, group: "Go to", label, run: () => setView(v) })),
     ...databases
@@ -451,7 +452,7 @@ export default function App() {
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, badge: pinned.size || undefined },
     { id: "explore", label: "Explore", icon: Network },
     { id: "usage", label: "Usage", icon: Activity },
-    ...(isAdmin ? [{ id: "admin" as View, label: "Admin", icon: ShieldCheck }] : []),
+    ...(showAdmin ? [{ id: "admin" as View, label: "Admin", icon: ShieldCheck }] : []),
   ];
 
   return (
@@ -579,7 +580,7 @@ export default function App() {
             {view === "training" && dbId && (
               <TrainingView key={dbId} databaseId={dbId} databaseName={db?.name ?? dbId} canEdit={canTeach} onNotify={notify} />
             )}
-            {view === "admin" && isAdmin && <AdminView authEnabled={!!me?.auth_enabled} onNotify={notify} />}
+            {view === "admin" && showAdmin && <AdminView authEnabled={!!me?.auth_enabled} onNotify={notify} />}
             {view === "documents" && (
               <DocumentsView databases={databases} defaultDb={dbId} llmEnabled={llmEnabled} onNotify={notify} />
             )}

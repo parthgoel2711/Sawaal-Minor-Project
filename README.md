@@ -59,9 +59,8 @@ It's a website that runs on your computer: start it and open **http://localhost:
 ## Presenting it
 
 `./start-demo.sh` (or `start-demo.bat`) runs Sawaal with no API key. A built-in "Demo AI" answers the 29 benchmark
-questions with their known-correct SQL, and sign-in plus restricted tables are switched on. Everything else (guard,
-execution, charts, training, roles, audit, streaming) is the real code. Accounts: `admin / admin-demo`,
-`analyst / analyst-demo`, `viewer / viewer-demo`. The step-by-step script is in [PRESENTATION.md](PRESENTATION.md).
+questions with their known-correct SQL. Everything else (guard, execution, charts, training, streaming) is the
+real code. There is no login. The step-by-step script is in [PRESENTATION.md](PRESENTATION.md).
 
 ## Quick start
 

@@ -10,12 +10,9 @@ if not exist frontend\dist\index.html (
   popd
 )
 set DEMO_MODE=true
-set AUTH_ENABLED=true
-set DEMO_USERS=true
-set RESTRICTED_TABLES=payroll,performance_reviews
 set OPEN_BROWSER=1
 echo.
-echo   Sawaal demo.  Sign in as:  admin / admin-demo   analyst / analyst-demo   viewer / viewer-demo
+echo   Sawaal demo (no login).
 echo.
 cd backend
 ..\.venv\Scripts\python.exe -m app
