@@ -11,7 +11,7 @@ keeps the demo reliable. For live AI, run `./start.sh` with a Claude or Groq key
 2. Idea: ask in English, Hinglish or voice. See the SQL, the table, a chart and a sentence.
 3. Pipeline: read schema, write SQL, check it is read-only, run, repair on error, explain.
 4. What we added on top of the original: documents (RAG), suggested dashboards, PostgreSQL/MySQL connections.
-5. What we adopted from Vanna 2.0: training memory, roles and restricted tables, audit log, streaming.
+5. Training memory, roles with restricted tables, audit log and streaming.
 6. Safety: sqlglot guard plus a read-only connection, PII masking, rate limit, encrypted connection strings.
 7. Evaluation: 29 questions on 4 databases, graded by result match (`backend/eval`).
 8. Limits and future work.
@@ -27,13 +27,6 @@ keeps the demo reliable. For live AI, run `./start.sh` with a Claude or Groq key
 8. Sign out, sign in as `viewer`. Open Company and ask about payroll: refused. The admin's Audit tab shows the attempt.
 9. Sign in as `admin`: Admin, Audit and Users.
 
-## Compared with Vanna 2.0
-| | Vanna 2.0 | Sawaal |
-| --- | --- | --- |
-| Shape | Python framework you build an app on | Finished app: UI, API, auth, history |
-| Memory | Agent memory, tools | Training page with examples and rules |
-| Permissions | User groups on tools | Roles plus restricted tables enforced on the SQL |
-| Extras | Streaming, audit | Streaming, audit, documents, dashboards, ER diagram, data quality, voice |
 
 ## Questions to expect
 - Is Demo AI cheating? It is a prepared stand-in; the guard, execution, charts, roles and audit are real. Live mode uses Claude or Groq.

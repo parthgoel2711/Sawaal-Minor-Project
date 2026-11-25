@@ -7,8 +7,8 @@ Two kinds of knowledge, both kept per database:
 * notes: plain-language business rules ("an active customer ordered in the last 90 days", "revenue means
   quantity * unit_price after discount"). Notes are shown to the model with every question on that database.
 
-This is the idea behind Vanna's training data and agent memory, built to be small and inspectable: everything is
-a row in one SQLite table that a person can read, edit and delete in the Training page.
+Kept small and inspectable: everything is a row in one SQLite table that a person can read, edit and delete in the
+Training page.
 """
 
 from __future__ import annotations

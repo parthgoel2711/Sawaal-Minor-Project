@@ -1,6 +1,6 @@
 """An append-only record of who did what: sign-ins, questions, SQL runs, uploads and changes.
 
-Vanna calls this an audit logger. Each row says who, which role, what, on which database, how it ended, and a short
+Each row says who, which role, what, on which database, how it ended, and a short
 detail (the question, or the SQL). It is written for every request when auth is off too (as the user "local").
 """
 

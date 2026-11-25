@@ -138,7 +138,7 @@ LIMIT 3`}
         </ul>
       </section>
 
-      <footer className="home-foot">React, FastAPI, SQLAlchemy and sqlglot. Claude or Groq writes the SQL. Training, roles, audit and streaming follow ideas from the open-source Vanna 2.0 project.</footer>
+      <footer className="home-foot">React, FastAPI, SQLAlchemy and sqlglot. Claude or Groq writes the SQL.</footer>
     </div>
   );
 }

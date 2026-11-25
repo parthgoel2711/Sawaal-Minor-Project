@@ -92,9 +92,6 @@ flowchart LR
     page shows progress instead of a spinner.
 23. **Demo mode.** An offline stand-in for the model that answers the benchmark questions, for presentations.
 
-Items 20 to 22 adopt ideas from the open-source Vanna 2.0 project (MIT): agent memory, user-aware permissions, an
-audit logger and streaming. Sawaal keeps its own foundation: read-only guard, self-repair, routing, documents,
-dashboards and connections.
 
 ## 6. Security design
 
