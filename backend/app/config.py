@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     demo_mode: bool = False
     auth_enabled: bool = False
     session_hours: int = 12
+    # Signs session cookies so they work across several server instances (set this on serverless hosting).
+    session_secret: str | None = None
     # Password for the first admin. If empty, one is generated and printed once at first start.
     admin_password: str | None = None
     # Also create demo users (analyst and viewer) with documented passwords. For presentations only.

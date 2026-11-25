@@ -179,3 +179,16 @@ def test_stream_reports_errors_as_events(client_without_llm):
             "POST", "/api/generate/stream", json={"database_id": "ecommerce", "question": "x"}) as r:
         body = "".join(r.iter_text())
     assert body.startswith("event: error") and "API key" in body
+
+
+def test_signed_sessions_work_across_instances(tmp_path):
+    from app.auth import UserStore
+
+    a = UserStore(tmp_path / "a.db", 12, "secret")
+    b = UserStore(tmp_path / "b.db", 12, "secret")  # a different server instance with its own database
+    for store in (a, b):
+        store.create("ann", "pw-pw-pw-1", "analyst")
+    _, token = a.login("ann", "pw-pw-pw-1")
+    assert b.user_for_token(token).username == "ann"
+    assert b.user_for_token(token + "x") is None
+    assert UserStore(tmp_path / "c.db", 12, "other").user_for_token(token) is None

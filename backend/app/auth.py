@@ -12,6 +12,7 @@ Passwords are hashed with scrypt. Sessions are random tokens in an HttpOnly cook
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import os
@@ -80,7 +81,9 @@ class AuthError(Exception):
 
 
 class UserStore:
-    def __init__(self, path: Path, session_hours: int = 12):
+    def __init__(self, path: Path, session_hours: int = 12, secret: str | None = None):
+        # With a secret, sessions are signed cookies that any server instance can verify (serverless hosting).
+        self.secret = secret.encode() if secret else None
         self.path = path
         self.session_hours = session_hours
         self._lock = threading.RLock()
@@ -149,6 +152,8 @@ class UserStore:
         ok = verify_password(password or "", stored)
         if not row or not ok:
             raise AuthError("Wrong username or password.")
+        if self.secret:
+            return User(row["id"], row["username"], row["role"]), self._sign(row["username"])
         token = secrets.token_urlsafe(32)
         expires = (datetime.now(UTC) + timedelta(hours=self.session_hours)).isoformat(timespec="seconds")
         with self._lock, self._connect() as conn:
@@ -158,9 +163,32 @@ class UserStore:
                          (hashlib.sha256(token.encode()).hexdigest(), row["id"], expires))
         return User(row["id"], row["username"], row["role"]), token
 
+    def _sign(self, username: str) -> str:
+        expires = int((datetime.now(UTC) + timedelta(hours=self.session_hours)).timestamp())
+        payload = base64.urlsafe_b64encode(f"{username}|{expires}".encode()).decode().rstrip("=")
+        sig = hmac.new(self.secret, payload.encode(), hashlib.sha256).hexdigest()
+        return f"s.{payload}.{sig}"
+
+    def _verify(self, token: str) -> User | None:
+        try:
+            _, payload, sig = token.split(".")
+            good = hmac.new(self.secret, payload.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig, good):
+                return None
+            username, expires = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode().rsplit("|", 1)
+            if int(expires) < datetime.now(UTC).timestamp():
+                return None
+        except (ValueError, UnicodeDecodeError):
+            return None
+        with self._connect() as conn:
+            row = conn.execute("SELECT id, username, role FROM users WHERE username = ?", (username,)).fetchone()
+        return User(row["id"], row["username"], row["role"]) if row else None
+
     def user_for_token(self, token: str | None) -> User | None:
         if not token:
             return None
+        if self.secret:
+            return self._verify(token)
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT u.id, u.username, u.role, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id "

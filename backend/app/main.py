@@ -77,7 +77,7 @@ def create_app(settings: Settings | None = None, generator: SQLGenerator | None 
         app.state.documents = DocumentStore(settings.data_dir / "documents.db")
         app.state.memory = AgentMemory(settings.data_dir / "memory.db")
         app.state.audit = AuditLog(settings.data_dir / "audit.db")
-        app.state.users = UserStore(settings.data_dir / "users.db", settings.session_hours)
+        app.state.users = UserStore(settings.data_dir / "users.db", settings.session_hours, settings.session_secret)
         if settings.auth_enabled:
             _seed_users(app.state.users, settings)
         app.state.generator = generator or make_generator(settings)
