@@ -1,0 +1,121 @@
+order_id,order_date,city,category,product,quantity,unit_price,payment_method,returned
+1079,2026-01-01,Pune,Clothing,Jeans,3,1799,Cash,No
+1050,2026-01-02,Mumbai,Grocery,Tea 500g,2,349,Card,No
+1036,2026-01-08,Delhi,Home,Cushion set,3,799,Net banking,No
+1046,2026-01-08,Pune,Grocery,Basmati rice 5kg,2,649,Cash,No
+1053,2026-01-08,Delhi,Home,Wall clock,4,999,Cash,No
+1087,2026-01-08,Delhi,Grocery,Basmati rice 5kg,2,649,Cash,Yes
+1080,2026-01-09,Pune,Clothing,T-shirt,2,599,Cash,Yes
+1072,2026-01-10,Delhi,Electronics,Power bank,1,1499,Card,No
+1110,2026-01-13,Jaipur,Clothing,Jeans,2,1799,Card,No
+1106,2026-01-14,Kolkata,Clothing,T-shirt,3,599,Card,Yes
+1008,2026-01-16,Jaipur,Electronics,Smart watch,2,3999,Net banking,No
+1017,2026-01-16,Mumbai,Electronics,Power bank,3,1499,Card,No
+1051,2026-01-16,Pune,Electronics,Smart watch,5,3999,Net banking,Yes
+1057,2026-01-19,Mumbai,Grocery,Olive oil 1L,3,899,UPI,Yes
+1076,2026-01-19,Kolkata,Grocery,Basmati rice 5kg,3,649,Net banking,Yes
+1097,2026-01-20,Jaipur,Clothing,Jeans,4,1799,Cash,No
+1098,2026-01-20,Jaipur,Grocery,Basmati rice 5kg,1,649,Card,No
+1105,2026-01-20,Pune,Home,Wall clock,4,999,Cash,Yes
+1030,2026-01-22,Mumbai,Home,Cushion set,1,799,Cash,No
+1040,2026-01-22,Kolkata,Clothing,Jacket,1,2999,Net banking,No
+1067,2026-01-23,Pune,Electronics,Smart watch,1,3999,Card,Yes
+1027,2026-01-26,Pune,Grocery,Tea 500g,5,349,UPI,Yes
+1038,2026-01-27,Mumbai,Electronics,Earbuds,4,1999,Card,No
+1029,2026-02-01,Delhi,Clothing,Jeans,4,1799,Net banking,No
+1056,2026-02-01,Bengaluru,Grocery,Olive oil 1L,4,899,Cash,Yes
+1099,2026-02-03,Jaipur,Clothing,Jeans,5,1799,Cash,Yes
+1043,2026-02-08,Jaipur,Grocery,Basmati rice 5kg,4,649,Card,No
+1049,2026-02-08,Jaipur,Grocery,Tea 500g,5,349,UPI,No
+1041,2026-02-15,Bengaluru,Grocery,Olive oil 1L,3,899,UPI,No
+1070,2026-02-16,Mumbai,Clothing,T-shirt,3,599,Cash,No
+1025,2026-02-18,Delhi,Home,Table lamp,2,1199,Net banking,Yes
+1052,2026-02-18,Pune,Electronics,Earbuds,1,1999,UPI,No
+1096,2026-02-21,Pune,Electronics,Smart watch,1,3999,Net banking,Yes
+1113,2026-02-23,Jaipur,Grocery,Basmati rice 5kg,4,649,Card,No
+1005,2026-02-26,Delhi,Home,Table lamp,5,1199,Card,No
+1063,2026-02-28,Delhi,Electronics,Earbuds,1,1999,Cash,No
+1021,2026-03-01,Kolkata,Grocery,Basmati rice 5kg,2,649,UPI,No
+1084,2026-03-01,Delhi,Clothing,Jacket,5,2999,Card,No
+1058,2026-03-06,Mumbai,Clothing,T-shirt,4,599,Card,No
+1093,2026-03-07,Kolkata,Grocery,Olive oil 1L,3,899,Card,Yes
+1033,2026-03-08,Jaipur,Electronics,Smart watch,3,3999,Card,No
+1064,2026-03-11,Mumbai,Electronics,Earbuds,4,1999,Cash,No
+1119,2026-03-11,Mumbai,Grocery,Basmati rice 5kg,4,649,Net banking,No
+1054,2026-03-12,Bengaluru,Grocery,Tea 500g,5,349,Net banking,No
+1019,2026-03-13,Mumbai,Home,Wall clock,4,999,Cash,No
+1118,2026-03-13,Jaipur,Electronics,Power bank,3,1499,Card,No
+1022,2026-03-14,Delhi,Grocery,Olive oil 1L,2,899,Net banking,No
+1111,2026-03-14,Pune,Home,Cushion set,3,799,Cash,No
+1092,2026-03-15,Delhi,Home,Wall clock,5,999,Card,Yes
+1104,2026-03-16,Pune,Electronics,Smart watch,3,3999,UPI,No
+1078,2026-03-17,Delhi,Grocery,Tea 500g,4,349,Card,Yes
+1074,2026-03-20,Kolkata,Home,Wall clock,2,999,Card,No
+1120,2026-03-21,Delhi,Home,Cushion set,2,799,UPI,No
+1047,2026-03-25,Pune,Grocery,Tea 500g,5,349,Net banking,Yes
+1062,2026-03-26,Jaipur,Electronics,Power bank,5,1499,Cash,No
+1103,2026-03-28,Bengaluru,Electronics,Power bank,1,1499,Card,No
+1012,2026-03-29,Mumbai,Home,Table lamp,4,1199,Net banking,Yes
+1115,2026-03-29,Jaipur,Electronics,Earbuds,1,1999,Cash,Yes
+1016,2026-03-30,Delhi,Home,Wall clock,4,999,Cash,Yes
+1102,2026-03-30,Bengaluru,Grocery,Olive oil 1L,3,899,UPI,No
+1044,2026-03-31,Mumbai,Home,Wall clock,5,999,Card,Yes
+1048,2026-04-01,Bengaluru,Electronics,Smart watch,5,3999,Net banking,No
+1061,2026-04-04,Delhi,Clothing,T-shirt,3,599,Net banking,No
+1028,2026-04-07,Mumbai,Grocery,Tea 500g,3,349,Cash,No
+1081,2026-04-08,Delhi,Electronics,Power bank,4,1499,Cash,No
+1018,2026-04-11,Bengaluru,Grocery,Olive oil 1L,1,899,Card,No
+1001,2026-04-12,Kolkata,Clothing,T-shirt,1,599,UPI,No
+1024,2026-04-13,Bengaluru,Home,Cushion set,1,799,Net banking,No
+1035,2026-04-13,Kolkata,Grocery,Basmati rice 5kg,2,649,Card,No
+1042,2026-04-13,Kolkata,Home,Cushion set,1,799,Card,Yes
+1108,2026-04-13,Jaipur,Electronics,Smart watch,5,3999,Card,No
+1060,2026-04-14,Pune,Home,Wall clock,4,999,Card,No
+1109,2026-04-16,Bengaluru,Electronics,Earbuds,5,1999,Card,No
+1003,2026-04-18,Delhi,Electronics,Power bank,2,1499,UPI,No
+1114,2026-04-20,Mumbai,Clothing,Jeans,5,1799,Card,Yes
+1011,2026-04-25,Pune,Home,Cushion set,5,799,UPI,Yes
+1071,2026-04-25,Jaipur,Grocery,Olive oil 1L,2,899,Cash,No
+1073,2026-04-25,Delhi,Home,Table lamp,4,1199,Net banking,No
+1014,2026-04-27,Delhi,Home,Wall clock,1,999,Cash,No
+1068,2026-04-27,Delhi,Clothing,T-shirt,3,599,Net banking,No
+1089,2026-04-27,Delhi,Clothing,T-shirt,5,599,UPI,No
+1009,2026-04-30,Jaipur,Home,Cushion set,4,799,Cash,No
+1090,2026-05-02,Pune,Electronics,Smart watch,1,3999,Cash,Yes
+1112,2026-05-04,Jaipur,Grocery,Olive oil 1L,4,899,UPI,Yes
+1059,2026-05-05,Mumbai,Electronics,Power bank,2,1499,Card,No
+1094,2026-05-05,Pune,Home,Table lamp,1,1199,Card,No
+1085,2026-05-07,Mumbai,Home,Cushion set,3,799,Card,Yes
+1100,2026-05-08,Bengaluru,Clothing,T-shirt,4,599,UPI,Yes
+1082,2026-05-10,Delhi,Grocery,Basmati rice 5kg,1,649,Cash,Yes
+1107,2026-05-11,Pune,Clothing,Jeans,2,1799,Cash,No
+1065,2026-05-12,Jaipur,Grocery,Tea 500g,4,349,Cash,Yes
+1095,2026-05-13,Pune,Home,Cushion set,4,799,Net banking,No
+1055,2026-05-14,Pune,Grocery,Tea 500g,5,349,Card,No
+1069,2026-05-15,Kolkata,Grocery,Basmati rice 5kg,2,649,UPI,Yes
+1117,2026-05-15,Mumbai,Home,Wall clock,4,999,Cash,No
+1006,2026-05-19,Delhi,Home,Table lamp,5,1199,Cash,No
+1034,2026-05-19,Jaipur,Grocery,Tea 500g,3,349,Card,No
+1088,2026-05-23,Delhi,Home,Cushion set,1,799,Card,No
+1004,2026-05-25,Delhi,Home,Table lamp,2,1199,UPI,No
+1023,2026-05-25,Pune,Clothing,Jacket,2,2999,UPI,No
+1116,2026-05-26,Mumbai,Clothing,Jeans,1,1799,Net banking,No
+1013,2026-05-27,Pune,Electronics,Smart watch,3,3999,Cash,No
+1007,2026-05-29,Jaipur,Grocery,Basmati rice 5kg,2,649,Cash,Yes
+1002,2026-05-30,Delhi,Electronics,Power bank,5,1499,Card,Yes
+1083,2026-05-31,Delhi,Grocery,Olive oil 1L,4,899,UPI,No
+1026,2026-06-03,Delhi,Electronics,Power bank,1,1499,UPI,No
+1037,2026-06-04,Pune,Grocery,Tea 500g,4,349,Cash,No
+1039,2026-06-09,Jaipur,Grocery,Olive oil 1L,1,899,Net banking,No
+1075,2026-06-12,Mumbai,Grocery,Tea 500g,4,349,Cash,Yes
+1045,2026-06-16,Delhi,Electronics,Smart watch,5,3999,Card,No
+1091,2026-06-16,Bengaluru,Grocery,Basmati rice 5kg,4,649,Net banking,Yes
+1077,2026-06-20,Bengaluru,Electronics,Earbuds,5,1999,Cash,No
+1020,2026-06-24,Bengaluru,Home,Cushion set,2,799,Card,Yes
+1101,2026-06-24,Bengaluru,Electronics,Power bank,4,1499,Cash,No
+1032,2026-06-26,Jaipur,Clothing,T-shirt,1,599,Cash,No
+1066,2026-06-26,Mumbai,Clothing,T-shirt,4,599,UPI,No
+1031,2026-06-27,Mumbai,Clothing,Jeans,5,1799,UPI,Yes
+1010,2026-06-28,Mumbai,Grocery,Basmati rice 5kg,1,649,Cash,No
+1015,2026-06-29,Pune,Electronics,Earbuds,5,1999,Net banking,No
+1086,2026-06-29,Jaipur,Home,Wall clock,2,999,UPI,No
